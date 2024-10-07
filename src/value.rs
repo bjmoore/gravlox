@@ -1,7 +1,7 @@
 use std::fmt::{Display, Error, Formatter};
 
 pub enum Value {
-    Double(f32),
+    Double(f64),
 }
 
 impl Display for Value {

@@ -1,33 +1,17 @@
-use crate::value::Value;
-use lazy_static::lazy_static;
-use std::{
-    fmt::{Display, Error, Formatter},
-    sync::Mutex,
-};
+use chunk::Chunk;
+use op::Op;
+use value::Value;
 
+mod chunk;
+mod op;
 mod value;
 
-lazy_static! {
-    static ref CONSTANTS: Mutex<Vec<Value>> = Mutex::new(vec![]);
-}
-
 fn main() {
-    CONSTANTS.lock().unwrap().push(Value::Double(1.0));
-    let program = Vec::from([Op::Return, Op::Constant(0)]);
+    let mut chunk = Chunk::new();
 
-    program.iter().for_each(|op| println!("{}", op));
-}
+    chunk.add_op(Op::Return, 1);
+    chunk.add_constant(Value::Double(1.234f64));
+    chunk.add_op(Op::Constant(0), 800);
 
-enum Op {
-    Return,
-    Constant(usize),
-}
-
-impl Display for Op {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        match self {
-            Op::Return => write!(f, "ret"),
-            Op::Constant(index) => write!(f, "const {}", CONSTANTS.lock().unwrap()[*index]),
-        }
-    }
+    println!("{}", chunk);
 }
