@@ -4,64 +4,62 @@ use crate::op::*;
 use crate::value::Value;
 
 pub struct Chunk {
+    name: String,
     code: Vec<u8>,
     constants: Vec<Value>,
     lineinfo: Vec<(u32, u32)>,
 }
 
 impl Chunk {
-    pub fn new() -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
+            name: String::from(name),
             code: Vec::new(),
             constants: Vec::new(),
             lineinfo: Vec::new(),
         }
     }
 
-    pub fn add_op(&mut self, opcode: u8, line_idx: u32) {
-        self.code.push(opcode);
+    pub fn add_op(&mut self, opcode: Op, line_idx: u32) {
+        self.code.push(opcode as u8);
+    }
+
+    pub fn add_data(&mut self, data: u8) {
+        self.code.push(data);
     }
 
     pub fn add_constant(&mut self, value: Value) -> usize {
         self.constants.push(value);
-        self.constants.len()
+        self.constants.len() - 1
     }
 }
 
 impl Display for Chunk {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        let line_number = 0;
-        let mut state = State::Fetch;
-        let mut data: Vec<u8> = Vec::new();
-        for (byte_idx, byte) in self.code.iter().enumerate() {
-            match state {
-                State::Fetch => match *byte {
-                    OP_RETURN => write!(f, "{:0>4} {:>4} {:>4}", byte_idx, line_number, "ret"),
-                    OP_CONSTANT => {
-                        state = State::LoadData(1);
-                        println!("bytes_needed: {}", 1);
-                        Ok(())
-                    }
-                    _ => panic!("unknown opcode"),
-                },
-                State::LoadData(mut bytes_needed) => {
-                    bytes_needed -= 1;
-                    println!("bytes_needed: {}", bytes_needed);
-                    if bytes_needed == 0 {
-                        state = State::DisplayExtendedInstruction(OP_CONSTANT);
-                    }
-                    Ok(())
+        let mut line_number = 0;
+        let mut idx = 0;
+
+        writeln!(f, "==== {} ====", self.name)?;
+
+        while idx < self.code.len() {
+            match self.code[idx].into() {
+                Op::Return => {
+                    writeln!(f, "{} {} {}", idx, line_number, "ret")?;
                 }
-            }?;
-            write!(f, "\n")?;
+                Op::Constant => {
+                    let const_idx = self.code[idx + 1] as usize;
+                    idx += 1;
+                    writeln!(
+                        f,
+                        "{} {} {} {}",
+                        idx, line_number, "const", self.constants[const_idx]
+                    )?;
+                }
+            }
+
+            idx += 1;
         }
 
         Ok(())
     }
-}
-
-enum State {
-    Fetch,
-    LoadData(usize),
-    DisplayExtendedInstruction(u8),
 }
