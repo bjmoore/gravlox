@@ -81,27 +81,25 @@ impl Chunk {
     pub fn get_constant(&self, const_idx: usize) -> &Value {
         &self.constants[const_idx]
     }
+}
 
-    fn print_simple_instr(
-        &self,
-        f: &mut Formatter<'_>,
-        byte_index: usize,
-        line_number: u32,
-        name: &str,
-    ) -> std::fmt::Result {
-        writeln!(f, "{:04} {:>4} {}", byte_index, line_number, name)
-    }
+fn print_simple_instr(
+    f: &mut Formatter<'_>,
+    byte_index: usize,
+    line_number: u32,
+    name: &str,
+) -> std::fmt::Result {
+    writeln!(f, "{:04} {:>4} {}", byte_index, line_number, name)
+}
 
-    fn print_const_instr(
-        &self,
-        f: &mut Formatter<'_>,
-        byte_index: usize,
-        line_number: u32,
-        name: &str,
-        value: Value,
-    ) -> std::fmt::Result {
-        writeln!(f, "{:04} {:>4} {} {}", byte_index, line_number, name, value)
-    }
+fn print_const_instr(
+    f: &mut Formatter<'_>,
+    byte_index: usize,
+    line_number: u32,
+    name: &str,
+    value: Value,
+) -> std::fmt::Result {
+    writeln!(f, "{:04} {:>4} {} {}", byte_index, line_number, name, value)
 }
 
 impl Display for Chunk {
@@ -118,17 +116,11 @@ impl Display for Chunk {
             }
             match self.code[idx] {
                 OP_RETURN => {
-                    self.print_simple_instr(f, idx, current_line.0, "ret")?;
+                    print_simple_instr(f, idx, current_line.0, "ret")?;
                 }
                 OP_CONSTANT => {
                     let const_idx = self.code[idx + 1] as usize;
-                    self.print_const_instr(
-                        f,
-                        idx,
-                        current_line.0,
-                        "const",
-                        self.constants[const_idx],
-                    )?;
+                    print_const_instr(f, idx, current_line.0, "const", self.constants[const_idx])?;
                     idx += 1;
                     current_line_idx += 1;
                 }
@@ -136,7 +128,7 @@ impl Display for Chunk {
                     let const_idx = (self.code[idx + 1] as usize)
                         << 16 + (self.code[idx + 2] as usize)
                         << 8 + (self.code[idx + 3] as usize);
-                    self.print_const_instr(
+                    print_const_instr(
                         f,
                         idx,
                         current_line.0,
@@ -147,19 +139,19 @@ impl Display for Chunk {
                     current_line_idx += 3;
                 }
                 OP_NEGATE => {
-                    self.print_simple_instr(f, idx, current_line.0, "neg")?;
+                    print_simple_instr(f, idx, current_line.0, "neg")?;
                 }
                 OP_ADD => {
-                    self.print_simple_instr(f, idx, current_line.0, "add")?;
+                    print_simple_instr(f, idx, current_line.0, "add")?;
                 }
                 OP_SUBTRACT => {
-                    self.print_simple_instr(f, idx, current_line.0, "sub")?;
+                    print_simple_instr(f, idx, current_line.0, "sub")?;
                 }
                 OP_MULTIPLY => {
-                    self.print_simple_instr(f, idx, current_line.0, "mul")?;
+                    print_simple_instr(f, idx, current_line.0, "mul")?;
                 }
                 OP_DIVIDE => {
-                    self.print_simple_instr(f, idx, current_line.0, "div")?;
+                    print_simple_instr(f, idx, current_line.0, "div")?;
                 }
                 _ => unreachable!("Unknown opcode: 0x{:02x}", self.code[idx]),
             };
