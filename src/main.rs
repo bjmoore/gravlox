@@ -1,5 +1,5 @@
 use chunk::Chunk;
-use op::{OP_CONSTANT, OP_NEGATE, OP_RETURN};
+use op::{OP_NEGATE, OP_RETURN};
 use std::error::Error;
 use vm::GravloxVM;
 

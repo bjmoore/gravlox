@@ -42,8 +42,8 @@ impl GravloxVM {
                     self.stack.push(*chunk.get_constant(const_idx));
                 }
                 OP_NEGATE => {
-                    let value = self.stack.pop();
-                    self.stack.push(value.unwrap());
+                    let value = self.stack.pop().unwrap();
+                    self.stack.push(-value);
                 }
                 _ => unreachable!("Unknown opcode: 0x{:02x}", opcode),
             }
