@@ -1,18 +1,19 @@
 use chunk::Chunk;
-use op::*;
+use op::{OP_CONSTANT, OP_RETURN};
+use std::error::Error;
 use value::Value;
 
 mod chunk;
 mod op;
 mod value;
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut chunk = Chunk::new("demo");
 
-    let offset = chunk.add_constant(Value::Double(3.14159));
-    chunk.add_op(Op::Constant, 1);
-    chunk.add_data(offset as u8);
-    chunk.add_op(Op::Return, 100);
+    chunk.add_constant(Value::Double(3.14159), 1)?;
+    chunk.add_code(OP_RETURN, 100);
 
     println!("{}", chunk);
+
+    Ok(())
 }
