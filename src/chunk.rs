@@ -38,6 +38,10 @@ impl Chunk {
         }
     }
 
+    pub fn get_ip(&self) -> *const u8 {
+        self.code.as_ptr()
+    }
+
     pub fn add_code(&mut self, opcode: u8, line_number: u32) {
         self.code.push(opcode as u8);
 
@@ -72,6 +76,10 @@ impl Chunk {
             self.add_code(const_idx as u8, line_number);
         }
         Ok(())
+    }
+
+    pub fn get_constant(&self, const_idx: usize) -> &Value {
+        &self.constants[const_idx]
     }
 }
 
@@ -113,6 +121,9 @@ impl Display for Chunk {
                     idx += 3;
                     current_line_idx += 3;
                 }
+                OP_NEGATE => {
+                    writeln!(f, "{} {} {}", idx, current_line.0, "neg")?;
+                }
                 _ => unreachable!("Unknown opcode: 0x{:02x}", self.code[idx]),
             };
 
@@ -132,7 +143,7 @@ mod test {
     fn test_overflow_to_constant_long() {
         let mut test_chunk = Chunk::new("test");
         for _ in 0..=256 {
-            let _ = test_chunk.add_constant(Value::Double(1.234), 0);
+            let _ = test_chunk.add_constant(1.234, 0);
         }
         assert_eq!(test_chunk.code.len(), 256 * 2 + 4, "code: {}", test_chunk);
         assert_eq!(test_chunk.code[512..], [OP_CONSTANT_LONG, 0, 1, 0]);
