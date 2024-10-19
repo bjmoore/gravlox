@@ -1,5 +1,6 @@
 use chunk::Chunk;
 use clap::Parser;
+use compiler::compile;
 use op::{OP_ADD, OP_NEGATE, OP_RETURN, OP_SUBTRACT};
 use std::{
     error::Error,
@@ -9,6 +10,7 @@ use std::{
 use vm::GravloxVM;
 
 mod chunk;
+mod compiler;
 mod op;
 mod value;
 mod vm;
@@ -49,4 +51,6 @@ fn repl() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn run(source: &str) {}
+fn run(source: &str) {
+    compile(source);
+}
