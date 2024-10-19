@@ -28,22 +28,42 @@ impl GravloxVM {
 
             match opcode {
                 OP_RETURN => {
-                    println!("{}", self.stack.pop().unwrap());
+                    println!("{}", self.pop());
                     return;
                 }
                 OP_CONSTANT => {
                     let const_idx = self.read_byte() as usize;
-                    self.stack.push(*chunk.get_constant(const_idx));
+                    self.push(*chunk.get_constant(const_idx));
                 }
                 OP_CONSTANT_LONG => {
                     let const_idx = (self.read_byte() as usize)
                         << 16 + (self.read_byte() as usize)
                         << 8 + (self.read_byte() as usize);
-                    self.stack.push(*chunk.get_constant(const_idx));
+                    self.push(*chunk.get_constant(const_idx));
                 }
                 OP_NEGATE => {
-                    let value = self.stack.pop().unwrap();
-                    self.stack.push(-value);
+                    let value = self.pop();
+                    self.push(-value);
+                }
+                OP_ADD => {
+                    let a = self.pop();
+                    let b = self.pop();
+                    self.push(a + b);
+                }
+                OP_SUBTRACT => {
+                    let a = self.pop();
+                    let b = self.pop();
+                    self.push(a - b);
+                }
+                OP_MULTIPLY => {
+                    let a = self.pop();
+                    let b = self.pop();
+                    self.push(a * b);
+                }
+                OP_DIVIDE => {
+                    let a = self.pop();
+                    let b = self.pop();
+                    self.push(a / b);
                 }
                 _ => unreachable!("Unknown opcode: 0x{:02x}", opcode),
             }
@@ -56,5 +76,13 @@ impl GravloxVM {
             self.ip = self.ip.add(1);
             ret
         }
+    }
+
+    fn pop(&mut self) -> Value {
+        self.stack.pop().expect("Stack underflow")
+    }
+
+    fn push(&mut self, value: Value) {
+        self.stack.push(value);
     }
 }
