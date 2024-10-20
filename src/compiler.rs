@@ -190,7 +190,6 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::True         => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Var          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::While        => ParseRule(None,                     None,                   Precedence::None),
-        TokenType::Error        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Eof          => ParseRule(None,                     None,                   Precedence::None),
     };
 }
