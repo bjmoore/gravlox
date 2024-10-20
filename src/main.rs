@@ -11,7 +11,9 @@ use vm::GravloxVM;
 
 mod chunk;
 mod compiler;
+mod lexer;
 mod op;
+mod token;
 mod value;
 mod vm;
 
