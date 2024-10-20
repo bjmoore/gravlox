@@ -6,7 +6,7 @@ use crate::token::Token;
 use crate::token::TokenType;
 use crate::value::Value;
 
-pub fn compile(source: String, chunk: &mut Chunk) {
+pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
     let mut parser = Parser {
         current: Token::empty(),
         previous: Token::empty(),
@@ -18,8 +18,10 @@ pub fn compile(source: String, chunk: &mut Chunk) {
 
     parser.advance();
     expression(&mut parser);
-    parser.consume(TokenType::Eof);
-    parser.end_compiler()
+    parser.consume(TokenType::Eof, "Expect end of expression.");
+    parser.end_compiler(debug);
+
+    !parser.had_error
 }
 
 struct Parser<'a> {
@@ -32,19 +34,34 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    fn advance(&mut self) -> Result<(), GravloxError> {
+    fn advance(&mut self) {
         self.previous = self.current;
-        self.current = self.lexer.next_token()?;
-
-        Ok(())
+        loop {
+            match self.lexer.next_token() {
+                Ok(token) => {
+                    self.current = token;
+                    break;
+                }
+                Err(err) => {
+                    self.error_at(self.current, err);
+                }
+            }
+        }
     }
 
-    fn consume(&mut self, t: TokenType) -> Result<(), GravloxError> {
-        Ok(())
+    fn consume(&mut self, t: TokenType, message: &'static str) {
+        if self.current.t == t {
+            self.advance();
+        } else {
+            self.error_at(self.current, GravloxError::CompileError(message));
+        }
     }
 
-    fn end_compiler(&mut self) {
-        self.emit_return()
+    fn end_compiler(&mut self, debug: bool) {
+        self.emit_return();
+        if !self.had_error && debug {
+            print!("{}", self.current_chunk());
+        }
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
@@ -68,13 +85,42 @@ impl<'a> Parser<'a> {
 
     fn emit_constant(&mut self, value: Value) {
         let line_number = self.previous.line;
-        self.current_chunk().add_constant(value, line_number);
+        self.current_chunk()
+            .add_constant(value, line_number)
+            .unwrap_or_else(|e| self.error_at(self.previous, e));
+    }
+
+    fn error_at(&mut self, token: Token, err: GravloxError) {
+        if self.panic_mode {
+            return;
+        }
+        self.panic_mode = true;
+        if token.t == TokenType::Eof {
+            println!("[line {}]: Error at end: {}", token.line, err);
+        } else {
+            println!(
+                "[line {}]: Error at '{}': {}",
+                token.line,
+                self.lexer.lexeme(token),
+                err
+            );
+        }
+        self.had_error = true;
     }
 }
 
 fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
     parser.advance();
-    let mut prefix_rule = get_rule(parser.previous.t).0.expect("Expect expression.");
+    let mut prefix_rule = match get_rule(parser.previous.t).0 {
+        Some(rule) => rule,
+        None => {
+            parser.error_at(
+                parser.previous,
+                GravloxError::CompileError("Expect expression."),
+            );
+            return;
+        }
+    };
 
     prefix_rule(parser);
 
@@ -119,7 +165,7 @@ fn binary(parser: &mut Parser) {
 
 fn grouping(parser: &mut Parser) {
     expression(parser);
-    parser.consume(TokenType::RightParen);
+    parser.consume(TokenType::RightParen, "Expect ')' after expression.");
 }
 
 fn number(parser: &mut Parser) {

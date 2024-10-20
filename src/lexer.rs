@@ -19,7 +19,6 @@ impl Scanner {
     }
 
     pub fn lexeme(&self, token: Token) -> &str {
-        println!("{:?}", token);
         &self.source[token.start..(token.start + token.len)]
     }
 

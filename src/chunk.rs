@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
+use crate::error::GravloxError;
 use crate::op::*;
 use crate::value::Value;
 
@@ -56,13 +57,11 @@ impl Chunk {
         }
     }
 
-    pub fn add_constant(
-        &mut self,
-        value: Value,
-        line_number: u32,
-    ) -> Result<(), MaxConstantsError> {
+    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<(), GravloxError> {
         if self.constants.len() == MAX_CONSTANTS {
-            return Err(MaxConstantsError);
+            return Err(GravloxError::CompileError(
+                "Too many constants in a single chunk.",
+            ));
         }
         self.constants.push(value);
         let const_idx = self.constants.len() - 1;
@@ -86,20 +85,24 @@ impl Chunk {
 fn print_simple_instr(
     f: &mut Formatter<'_>,
     byte_index: usize,
-    line_number: u32,
+    line_display: &str,
     name: &str,
 ) -> std::fmt::Result {
-    writeln!(f, "{:04} {:>4} {}", byte_index, line_number, name)
+    writeln!(f, "{:04} {:>4} {}", byte_index, line_display, name)
 }
 
 fn print_const_instr(
     f: &mut Formatter<'_>,
     byte_index: usize,
-    line_number: u32,
+    line_display: &str,
     name: &str,
     value: Value,
 ) -> std::fmt::Result {
-    writeln!(f, "{:04} {:>4} {} {}", byte_index, line_number, name, value)
+    writeln!(
+        f,
+        "{:04} {:>4} {} {}",
+        byte_index, line_display, name, value
+    )
 }
 
 impl Display for Chunk {
@@ -108,19 +111,24 @@ impl Display for Chunk {
         let mut line_iter = self.lineinfo.iter();
         let mut current_line_idx = 0;
         let mut current_line = &(0, 0);
+        let mut line_display = String::from("   |");
         writeln!(f, "==== {} ====", self.name)?;
 
         while idx < self.code.len() {
             if current_line_idx == current_line.1 {
                 current_line = line_iter.next().unwrap_or(&(0, 0));
+                current_line_idx = 0;
+                line_display = format!("{:>4}", current_line.0);
+            } else {
+                line_display = String::from("   |");
             }
             match self.code[idx] {
                 OP_RETURN => {
-                    print_simple_instr(f, idx, current_line.0, "ret")?;
+                    print_simple_instr(f, idx, &line_display, "ret")?;
                 }
                 OP_CONSTANT => {
                     let const_idx = self.code[idx + 1] as usize;
-                    print_const_instr(f, idx, current_line.0, "const", self.constants[const_idx])?;
+                    print_const_instr(f, idx, &line_display, "const", self.constants[const_idx])?;
                     idx += 1;
                     current_line_idx += 1;
                 }
@@ -131,7 +139,7 @@ impl Display for Chunk {
                     print_const_instr(
                         f,
                         idx,
-                        current_line.0,
+                        &line_display,
                         "const_long",
                         self.constants[const_idx],
                     )?;
@@ -139,19 +147,19 @@ impl Display for Chunk {
                     current_line_idx += 3;
                 }
                 OP_NEGATE => {
-                    print_simple_instr(f, idx, current_line.0, "neg")?;
+                    print_simple_instr(f, idx, &line_display, "neg")?;
                 }
                 OP_ADD => {
-                    print_simple_instr(f, idx, current_line.0, "add")?;
+                    print_simple_instr(f, idx, &line_display, "add")?;
                 }
                 OP_SUBTRACT => {
-                    print_simple_instr(f, idx, current_line.0, "sub")?;
+                    print_simple_instr(f, idx, &line_display, "sub")?;
                 }
                 OP_MULTIPLY => {
-                    print_simple_instr(f, idx, current_line.0, "mul")?;
+                    print_simple_instr(f, idx, &line_display, "mul")?;
                 }
                 OP_DIVIDE => {
-                    print_simple_instr(f, idx, current_line.0, "div")?;
+                    print_simple_instr(f, idx, &line_display, "div")?;
                 }
                 _ => unreachable!("Unknown opcode: 0x{:02x}", self.code[idx]),
             };
