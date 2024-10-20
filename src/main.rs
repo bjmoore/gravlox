@@ -11,6 +11,7 @@ use vm::GravloxVM;
 
 mod chunk;
 mod compiler;
+mod error;
 mod lexer;
 mod op;
 mod token;
@@ -26,8 +27,6 @@ struct Args {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut vm = GravloxVM::new();
-
     let args = Args::parse();
 
     match args.filename {
@@ -39,20 +38,24 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn run_script(filename: &str) -> Result<(), Box<dyn Error>> {
+    let mut vm = GravloxVM::new();
     let script = String::from_utf8(fs::read(filename)?)?;
-    Ok(run(&script))
+    let mut chunk = Chunk::new("");
+    compile(script, &mut chunk);
+
+    Ok(vm.interpret(&chunk))
 }
 
 fn repl() -> Result<(), Box<dyn Error>> {
+    let mut vm = GravloxVM::new();
     loop {
         let mut buf = String::new();
         io::stdout().write_all(b"> ")?;
         io::stdout().flush()?;
         io::stdin().read_line(&mut buf)?;
-        run(&buf);
-    }
-}
 
-fn run(source: &str) {
-    compile(source);
+        let mut chunk = Chunk::new("");
+        compile(buf.clone(), &mut chunk);
+        vm.interpret(&chunk);
+    }
 }

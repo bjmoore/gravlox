@@ -42,8 +42,8 @@ impl Chunk {
         self.code.as_ptr()
     }
 
-    pub fn add_code(&mut self, opcode: u8, line_number: u32) {
-        self.code.push(opcode as u8);
+    pub fn add_code(&mut self, code: u8, line_number: u32) {
+        self.code.push(code as u8);
 
         if let Some(line) = self.lineinfo.last_mut() {
             if line.0 == line_number {

@@ -1,3 +1,4 @@
+use crate::error::GravloxError;
 use crate::token::Token;
 use crate::token::TokenType;
 pub struct Scanner {
@@ -17,9 +18,14 @@ impl Scanner {
         }
     }
 
-    pub fn next_token(&mut self) -> Token {
+    pub fn lexeme(&self, token: Token) -> &str {
+        println!("{:?}", token);
+        &self.source[token.start..(token.start + token.len)]
+    }
+
+    pub fn next_token(&mut self) -> Result<Token, GravloxError> {
         self.start = self.current;
-        let bytes = self.source.as_bytes();
+        self.skip_whitespace();
 
         if self.is_end() {
             return self.make_token(TokenType::Eof);
@@ -106,6 +112,9 @@ impl Scanner {
     }
 
     fn peek_char(&self) -> char {
+        if self.is_end() {
+            return '\0';
+        }
         self.source.as_bytes()[self.current] as char
     }
 
@@ -127,19 +136,20 @@ impl Scanner {
         true
     }
 
-    fn make_token(&self, token_type: TokenType) -> Token {
-        Token::new(
+    fn make_token(&self, token_type: TokenType) -> Result<Token, GravloxError> {
+        Ok(Token::new(
             token_type,
-            &self.source[self.start..self.current],
+            self.start,
+            self.current - self.start,
             self.line,
-        )
+        ))
     }
 
-    fn error_token(&self, message: &'static str) -> Token {
-        Token::new(TokenType::Error, message, self.line)
+    fn error_token(&self, message: &'static str) -> Result<Token, GravloxError> {
+        Err(GravloxError::CompileError(message))
     }
 
-    fn string(&mut self) -> Token {
+    fn string(&mut self) -> Result<Token, GravloxError> {
         while self.peek_char() != '"' && !self.is_end() {
             let next_char = self.next_char();
             if next_char == '\n' {
@@ -156,7 +166,7 @@ impl Scanner {
         self.make_token(TokenType::String)
     }
 
-    fn number(&mut self) -> Token {
+    fn number(&mut self) -> Result<Token, GravloxError> {
         while self.peek_char().is_ascii_digit() {
             let _ = self.next_char();
         }
@@ -172,7 +182,7 @@ impl Scanner {
         self.make_token(TokenType::Number)
     }
 
-    fn identifier(&mut self) -> Token {
+    fn identifier(&mut self) -> Result<Token, GravloxError> {
         while self.peek_char().is_ascii_alphanumeric() || self.peek_char() == '_' {
             let _ = self.next_char();
         }
