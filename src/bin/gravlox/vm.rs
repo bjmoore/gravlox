@@ -46,23 +46,23 @@ impl GravloxVM {
                     self.push(-value);
                 }
                 OP_ADD => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push(a + b);
                 }
                 OP_SUBTRACT => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push(a - b);
                 }
                 OP_MULTIPLY => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push(a * b);
                 }
                 OP_DIVIDE => {
-                    let a = self.pop();
                     let b = self.pop();
+                    let a = self.pop();
                     self.push(a / b);
                 }
                 _ => unreachable!("Unknown opcode: 0x{:02x}", opcode),
