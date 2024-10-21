@@ -23,8 +23,8 @@ impl Scanner {
     }
 
     pub fn next_token(&mut self) -> Result<Token, GravloxError> {
-        self.start = self.current;
         self.skip_whitespace();
+        self.start = self.current;
 
         if self.is_end() {
             return self.make_token(TokenType::Eof);
@@ -237,4 +237,9 @@ impl Scanner {
 
         TokenType::Identifier
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
 }
