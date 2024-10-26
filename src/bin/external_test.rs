@@ -33,8 +33,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         // compare vecs elt by elt and check they are =
         let output = Command::new(GRAVLOX_PATH).arg(test_file.path()).output()?;
         for line in output.stdout.lines() {
-            if expectations[0] != line.unwrap() {
+            let line = line.unwrap();
+            if expectations[0] != line {
                 println!("\x1b[0;31mfail!\x1b[0m");
+                println!("Expected: {}, Actual: {}", expectations[0], line);
             } else {
                 println!("pass!");
             }

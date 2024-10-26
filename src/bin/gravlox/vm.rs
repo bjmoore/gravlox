@@ -42,50 +42,68 @@ impl GravloxVM {
                     self.push(*chunk.get_constant(const_idx));
                 }
                 OP_NEGATE => {
-                    let value = self.pop();
+                    let value = self.peek(0);
                     if let Value::Number(value) = value {
+                        let _ = self.pop();
                         self.push(Value::Number(-value));
                     } else {
                         // emit an error if we get here
                     }
                 }
                 OP_ADD => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.peek(0);
+                    let a = self.peek(1);
                     if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        let _ = self.pop();
+                        let _ = self.pop();
                         self.push(Value::Number(a + b));
                     } else {
                         // emit an error here
                     }
                 }
                 OP_SUBTRACT => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.peek(0);
+                    let a = self.peek(1);
                     if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        let _ = self.pop();
+                        let _ = self.pop();
                         self.push(Value::Number(a - b));
                     } else {
                         // emit an error here
                     }
                 }
                 OP_MULTIPLY => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.peek(0);
+                    let a = self.peek(1);
                     if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        let _ = self.pop();
+                        let _ = self.pop();
                         self.push(Value::Number(a * b));
                     } else {
                         // emit an error here
                     }
                 }
                 OP_DIVIDE => {
-                    let b = self.pop();
-                    let a = self.pop();
+                    let b = self.peek(0);
+                    let a = self.peek(1);
                     if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        let _ = self.pop();
+                        let _ = self.pop();
                         self.push(Value::Number(a / b));
                     } else {
                         // emit an error here
                     }
                 }
-                _ => unreachable!("Unknown opcode: 0x{:02x}", opcode),
+                OP_NIL => {
+                    self.push(Value::Nil);
+                }
+                OP_TRUE => {
+                    self.push(Value::Bool(true));
+                }
+                OP_FALSE => {
+                    self.push(Value::Bool(false));
+                }
+                _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }
     }

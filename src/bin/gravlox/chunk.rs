@@ -161,7 +161,19 @@ impl Display for Chunk {
                 OP_DIVIDE => {
                     print_simple_instr(f, idx, &line_display, "div")?;
                 }
-                _ => unreachable!("Unknown opcode: 0x{:02x}", self.code[idx]),
+                OP_NIL => {
+                    print_simple_instr(f, idx, &line_display, "nil")?;
+                }
+                OP_TRUE => {
+                    print_simple_instr(f, idx, &line_display, "true")?;
+                }
+                OP_FALSE => {
+                    print_simple_instr(f, idx, &line_display, "false")?;
+                }
+                _ => unreachable!(
+                    "Unknown opcode while printing chunk: 0x{:02x}",
+                    self.code[idx]
+                ),
             };
 
             idx += 1;

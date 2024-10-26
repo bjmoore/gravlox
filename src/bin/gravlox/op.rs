@@ -6,3 +6,6 @@ pub const OP_ADD: u8 = 0x04;
 pub const OP_SUBTRACT: u8 = 0x05;
 pub const OP_MULTIPLY: u8 = 0x06;
 pub const OP_DIVIDE: u8 = 0x07;
+pub const OP_NIL: u8 = 0x08;
+pub const OP_TRUE: u8 = 0x09;
+pub const OP_FALSE: u8 = 0x0A;

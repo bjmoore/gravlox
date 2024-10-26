@@ -174,6 +174,17 @@ fn number(parser: &mut Parser) {
     parser.emit_constant(Value::Number(number));
 }
 
+fn literal(parser: &mut Parser) {
+    let operator_type = parser.previous.t;
+
+    match operator_type {
+        TokenType::Nil => parser.emit_byte(OP_NIL),
+        TokenType::True => parser.emit_byte(OP_TRUE),
+        TokenType::False => parser.emit_byte(OP_FALSE),
+        _ => unreachable!(),
+    }
+}
+
 struct ParseRule(
     Option<Box<dyn FnMut(&mut Parser)>>,
     Option<Box<dyn FnMut(&mut Parser)>>,
@@ -223,17 +234,17 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::And          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Class        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Else         => ParseRule(None,                     None,                   Precedence::None),
-        TokenType::False        => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::False        => ParseRule(Some(Box::new(literal)),  None,                   Precedence::None),
         TokenType::For          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Fun          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::If           => ParseRule(None,                     None,                   Precedence::None),
-        TokenType::Nil          => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::Nil          => ParseRule(Some(Box::new(literal)),  None,                   Precedence::None),
         TokenType::Or           => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Print        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Return       => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Super        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::This         => ParseRule(None,                     None,                   Precedence::None),
-        TokenType::True         => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::True         => ParseRule(Some(Box::new(literal)),  None,                   Precedence::None),
         TokenType::Var          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::While        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Eof          => ParseRule(None,                     None,                   Precedence::None),
