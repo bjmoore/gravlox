@@ -180,7 +180,7 @@ mod test {
     fn test_overflow_to_constant_long() {
         let mut test_chunk = Chunk::new("test");
         for _ in 0..=256 {
-            let _ = test_chunk.add_constant(1.234, 0);
+            let _ = test_chunk.add_constant(Value::Number(1.234), 0);
         }
         assert_eq!(test_chunk.code.len(), 256 * 2 + 4, "code: {}", test_chunk);
         assert_eq!(test_chunk.code[512..], [OP_CONSTANT_LONG, 0, 1, 0]);

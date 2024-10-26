@@ -170,8 +170,8 @@ fn grouping(parser: &mut Parser) {
 
 fn number(parser: &mut Parser) {
     let lexeme = parser.lexer.lexeme(parser.previous);
-    let number = lexeme.parse::<Value>().unwrap();
-    parser.emit_constant(number);
+    let number = lexeme.parse::<f64>().unwrap();
+    parser.emit_constant(Value::Number(number));
 }
 
 struct ParseRule(

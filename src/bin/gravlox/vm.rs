@@ -43,27 +43,47 @@ impl GravloxVM {
                 }
                 OP_NEGATE => {
                     let value = self.pop();
-                    self.push(-value);
+                    if let Value::Number(value) = value {
+                        self.push(Value::Number(-value));
+                    } else {
+                        // emit an error if we get here
+                    }
                 }
                 OP_ADD => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push(a + b);
+                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        self.push(Value::Number(a + b));
+                    } else {
+                        // emit an error here
+                    }
                 }
                 OP_SUBTRACT => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push(a - b);
+                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        self.push(Value::Number(a - b));
+                    } else {
+                        // emit an error here
+                    }
                 }
                 OP_MULTIPLY => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push(a * b);
+                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        self.push(Value::Number(a * b));
+                    } else {
+                        // emit an error here
+                    }
                 }
                 OP_DIVIDE => {
                     let b = self.pop();
                     let a = self.pop();
-                    self.push(a / b);
+                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        self.push(Value::Number(a / b));
+                    } else {
+                        // emit an error here
+                    }
                 }
                 _ => unreachable!("Unknown opcode: 0x{:02x}", opcode),
             }
@@ -85,4 +105,10 @@ impl GravloxVM {
     fn push(&mut self, value: Value) {
         self.stack.push(value);
     }
+
+    fn peek(&self, depth: usize) -> Value {
+        self.stack[self.stack.len() - depth - 1]
+    }
+
+    fn runtime_error() {}
 }
