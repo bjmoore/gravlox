@@ -101,6 +101,10 @@ impl Scanner {
         }
     }
 
+    fn char_at(&self, idx: usize) -> char {
+        self.source.as_bytes()[idx] as char
+    }
+
     fn is_end(&self) -> bool {
         self.current == self.source.as_bytes().len()
     }
@@ -185,17 +189,18 @@ impl Scanner {
         while self.peek_char().is_ascii_alphanumeric() || self.peek_char() == '_' {
             let _ = self.next_char();
         }
+
         self.make_token(self.identifier_type())
     }
 
     fn identifier_type(&self) -> TokenType {
-        match self.peek_char() {
+        match self.char_at(self.start) {
             'a' => self.keyword(1, 2, "nd", TokenType::And),
             'c' => self.keyword(1, 4, "lass", TokenType::Class),
             'e' => self.keyword(1, 3, "lse", TokenType::Else),
             'f' => {
                 if self.current - self.start > 1 {
-                    match self.peek_next_char() {
+                    match self.char_at(self.start + 1) {
                         'a' => self.keyword(2, 3, "lse", TokenType::False),
                         'o' => self.keyword(2, 1, "r", TokenType::For),
                         'u' => self.keyword(2, 1, "n", TokenType::Fun),
@@ -213,7 +218,7 @@ impl Scanner {
             's' => self.keyword(1, 4, "uper", TokenType::Super),
             't' => {
                 if self.current - self.start > 1 {
-                    match self.peek_next_char() {
+                    match self.char_at(self.start + 1) {
                         'h' => self.keyword(2, 2, "is", TokenType::This),
                         'r' => self.keyword(2, 2, "ue", TokenType::True),
                         _ => TokenType::Identifier,
@@ -230,7 +235,7 @@ impl Scanner {
 
     fn keyword(&self, start: usize, len: usize, rest: &str, t: TokenType) -> TokenType {
         if self.current - self.start == start + len
-            && self.source.as_bytes()[self.start..len] == *rest.as_bytes()
+            && self.source.as_bytes()[self.start + start..start + len] == *rest.as_bytes()
         {
             return t;
         }
