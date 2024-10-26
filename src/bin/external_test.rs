@@ -1,6 +1,7 @@
 use regex::Regex;
 use std::error::Error;
 use std::fs;
+use std::io::BufRead;
 use std::process::Command;
 
 const GRAVLOX_PATH: &str = "./target/debug/gravlox";
@@ -14,10 +15,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     // consume stdout and check the expects in order
     let expect_regex = Regex::new("// expect: (.*)")?;
     for test_file in fs::read_dir(TEST_DIR)? {
-        let contents = fs::read_to_string(test_file?.path())?;
+        let test_file = test_file?;
+        let test_name = test_file.file_name().into_string().unwrap();
+        print!("Runing test: {} ... ", test_name);
+        let contents = fs::read_to_string(test_file.path())?;
+
+        let mut expectations = Vec::new();
+
+        // put these into a vec
         for line in contents.lines() {
-            let captures = expect_regex.captures(line).unwrap();
-            println!("{:?}", captures);
+            match expect_regex.captures(line) {
+                Some(captures) => expectations.push(captures.get(1).unwrap().as_str().to_string()),
+                None => (),
+            }
+        }
+
+        // compare vecs elt by elt and check they are =
+        let output = Command::new(GRAVLOX_PATH).arg(test_file.path()).output()?;
+        for line in output.stdout.lines() {
+            if expectations[0] != line.unwrap() {
+                println!("\x1b[0;31mfail!\x1b[0m");
+            } else {
+                println!("pass!");
+            }
         }
     }
 
