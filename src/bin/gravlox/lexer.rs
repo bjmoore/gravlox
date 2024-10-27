@@ -235,7 +235,8 @@ impl Scanner {
 
     fn keyword(&self, start: usize, len: usize, rest: &str, t: TokenType) -> TokenType {
         if self.current - self.start == start + len
-            && self.source.as_bytes()[self.start + start..start + len] == *rest.as_bytes()
+            && self.source.as_bytes()[self.start + start..self.start + start + len]
+                == *rest.as_bytes()
         {
             return t;
         }

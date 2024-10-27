@@ -18,7 +18,7 @@ impl Display for Value {
 }
 
 impl Value {
-    pub fn is_falsey(&self) -> bool {
+    pub fn as_bool(&self) -> bool {
         match self {
             Value::Bool(b) => *b,
             Value::Nil => false,

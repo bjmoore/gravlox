@@ -105,7 +105,7 @@ impl GravloxVM {
                 }
                 OP_NOT => {
                     let a = self.pop();
-                    self.push(Value::Bool(a.is_falsey()));
+                    self.push(Value::Bool(!a.as_bool()));
                 }
                 OP_EQUAL => {
                     let b = self.pop();
