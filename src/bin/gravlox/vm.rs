@@ -103,6 +103,37 @@ impl GravloxVM {
                 OP_FALSE => {
                     self.push(Value::Bool(false));
                 }
+                OP_NOT => {
+                    let a = self.pop();
+                    self.push(Value::Bool(a.is_falsey()));
+                }
+                OP_EQUAL => {
+                    let b = self.pop();
+                    let a = self.pop();
+                    self.push(Value::Bool(a.equal(&b)));
+                }
+                OP_GREATER => {
+                    let b = self.peek(0);
+                    let a = self.peek(1);
+                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        let _ = self.pop();
+                        let _ = self.pop();
+                        self.push(Value::Bool(a > b));
+                    } else {
+                        // emit an error here
+                    }
+                }
+                OP_LESS => {
+                    let b = self.peek(0);
+                    let a = self.peek(1);
+                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
+                        let _ = self.pop();
+                        let _ = self.pop();
+                        self.push(Value::Bool(a < b));
+                    } else {
+                        // emit an error here
+                    }
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }

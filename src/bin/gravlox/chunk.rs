@@ -170,6 +170,18 @@ impl Display for Chunk {
                 OP_FALSE => {
                     print_simple_instr(f, idx, &line_display, "false")?;
                 }
+                OP_NOT => {
+                    print_simple_instr(f, idx, &line_display, "not")?;
+                }
+                OP_EQUAL => {
+                    print_simple_instr(f, idx, &line_display, "equal")?;
+                }
+                OP_GREATER => {
+                    print_simple_instr(f, idx, &line_display, "greater")?;
+                }
+                OP_LESS => {
+                    print_simple_instr(f, idx, &line_display, "less")?;
+                }
                 _ => unreachable!(
                     "Unknown opcode while printing chunk: 0x{:02x}",
                     self.code[idx]

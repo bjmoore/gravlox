@@ -144,6 +144,7 @@ fn unary(parser: &mut Parser) {
     parse_precedence(parser, Precedence::Unary);
 
     match operator_type {
+        TokenType::Bang => parser.emit_byte(OP_NOT),
         TokenType::Minus => parser.emit_byte(OP_NEGATE),
         _ => unreachable!(),
     }
@@ -220,7 +221,7 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::Semicolon    => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Slash        => ParseRule(None,                     Some(Box::new(binary)), Precedence::Factor),
         TokenType::Star         => ParseRule(None,                     Some(Box::new(binary)), Precedence::Factor),
-        TokenType::Bang         => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::Bang         => ParseRule(Some(Box::new(unary)),    None,                   Precedence::None),
         TokenType::BangEqual    => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Equal        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::EqualEqual   => ParseRule(None,                     None,                   Precedence::None),
