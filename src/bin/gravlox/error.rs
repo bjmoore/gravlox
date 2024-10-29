@@ -4,7 +4,7 @@ use std::fmt::Display;
 #[derive(Debug)]
 pub enum GravloxError {
     CompileError(&'static str),
-    RuntimeError(&'static str),
+    RuntimeError(String),
 }
 
 impl Error for GravloxError {}

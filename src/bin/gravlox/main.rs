@@ -45,7 +45,7 @@ fn run_script(filename: &str, debug: bool) -> Result<(), Box<dyn Error>> {
     let compile_ok = compile(script, &mut chunk, debug);
 
     if compile_ok {
-        vm.interpret(&chunk);
+        vm.interpret(&chunk)?;
     }
 
     Ok(())
@@ -62,7 +62,7 @@ fn repl(debug: bool) -> Result<(), Box<dyn Error>> {
         let mut chunk = Chunk::new(MAIN);
         let compile_ok = compile(buf.clone(), &mut chunk, debug);
         if compile_ok {
-            vm.interpret(&chunk);
+            vm.interpret(&chunk)?;
         }
     }
 }

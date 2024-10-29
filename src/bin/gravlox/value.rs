@@ -1,10 +1,13 @@
+use std::cell::RefCell;
 use std::fmt::Display;
+use std::rc::Rc;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
     Nil,
     Bool(bool),
+    ObjRef(Rc<RefCell<Obj>>),
 }
 
 impl Display for Value {
@@ -13,6 +16,7 @@ impl Display for Value {
             Value::Number(v) => write!(f, "{}", v),
             Value::Nil => write!(f, "nil"),
             Value::Bool(v) => write!(f, "{}", v),
+            Value::ObjRef(v) => write!(f, "{:?}", v.borrow()),
         }
     }
 }
@@ -23,6 +27,7 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Nil => false,
             Value::Number(n) => *n == 0f64,
+            Value::ObjRef(_) => true,
         }
     }
 
@@ -39,4 +44,12 @@ impl Value {
 #[derive(Debug, Clone)]
 pub enum Obj {
     String(String),
+}
+
+impl Display for Obj {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Obj::String(s) => write!(f, "{}", s),
+        }
+    }
 }

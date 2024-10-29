@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
@@ -80,6 +81,28 @@ impl Chunk {
     pub fn get_constant(&self, const_idx: usize) -> &Value {
         &self.constants[const_idx]
     }
+
+    pub fn get_line(&self, ip: *const u8) -> u32 {
+        let mut byte_index = 0;
+
+        unsafe {
+            byte_index = ip.offset_from(self.get_ip());
+        }
+
+        let mut current_line = &(0, 0);
+        let mut current_line_idx = 0;
+        let mut lineinfo_iter = self.lineinfo.iter();
+        for _ in 0..byte_index {
+            if current_line_idx == current_line.1 {
+                current_line = lineinfo_iter.next().unwrap_or(&(0, 0));
+                current_line_idx = 0;
+            } else {
+                current_line_idx += 1;
+            }
+        }
+
+        current_line.0
+    }
 }
 
 fn print_simple_instr(
@@ -96,7 +119,7 @@ fn print_const_instr(
     byte_index: usize,
     line_display: &str,
     name: &str,
-    value: Value,
+    value: &Value,
 ) -> std::fmt::Result {
     writeln!(
         f,
@@ -108,7 +131,7 @@ fn print_const_instr(
 impl Display for Chunk {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut idx = 0;
-        let mut line_iter = self.lineinfo.iter();
+        let mut lineinfo_iter = self.lineinfo.iter();
         let mut current_line_idx = 0;
         let mut current_line = &(0, 0);
         let mut line_display = String::from("   |");
@@ -116,7 +139,7 @@ impl Display for Chunk {
 
         while idx < self.code.len() {
             if current_line_idx == current_line.1 {
-                current_line = line_iter.next().unwrap_or(&(0, 0));
+                current_line = lineinfo_iter.next().unwrap_or(&(0, 0));
                 current_line_idx = 0;
                 line_display = format!("{:>4}", current_line.0);
             } else {
@@ -128,7 +151,13 @@ impl Display for Chunk {
                 }
                 OP_CONSTANT => {
                     let const_idx = self.code[idx + 1] as usize;
-                    print_const_instr(f, idx, &line_display, "const", self.constants[const_idx])?;
+                    print_const_instr(
+                        f,
+                        idx,
+                        &line_display,
+                        "const",
+                        self.constants[const_idx].borrow(),
+                    )?;
                     idx += 1;
                     current_line_idx += 1;
                 }
@@ -141,7 +170,7 @@ impl Display for Chunk {
                         idx,
                         &line_display,
                         "const_long",
-                        self.constants[const_idx],
+                        self.constants[const_idx].borrow(),
                     )?;
                     idx += 3;
                     current_line_idx += 3;

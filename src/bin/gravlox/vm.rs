@@ -1,12 +1,15 @@
 use std::ptr;
 
 use crate::chunk::Chunk;
+use crate::error::GravloxError;
 use crate::op::*;
+use crate::value::Obj;
 use crate::value::Value;
 
 pub struct GravloxVM {
     ip: *const u8,
     stack: Vec<Value>,
+    heap: Vec<Obj>,
 }
 
 impl GravloxVM {
@@ -14,32 +17,33 @@ impl GravloxVM {
         Self {
             ip: ptr::null(),
             stack: Vec::new(),
+            heap: Vec::new(),
         }
     }
 
-    pub fn interpret(&mut self, chunk: &Chunk) {
+    pub fn interpret(&mut self, chunk: &Chunk) -> Result<(), GravloxError> {
         self.ip = chunk.get_ip();
-        self.run(chunk);
+        self.run(chunk)
     }
 
-    fn run(&mut self, chunk: &Chunk) {
+    fn run(&mut self, chunk: &Chunk) -> Result<(), GravloxError> {
         loop {
             let opcode = self.read_byte();
 
             match opcode {
                 OP_RETURN => {
                     println!("{}", self.pop());
-                    return;
+                    return Ok(());
                 }
                 OP_CONSTANT => {
                     let const_idx = self.read_byte() as usize;
-                    self.push(*chunk.get_constant(const_idx));
+                    self.push(chunk.get_constant(const_idx).clone());
                 }
                 OP_CONSTANT_LONG => {
                     let const_idx = (self.read_byte() as usize)
                         << 16 + (self.read_byte() as usize)
                         << 8 + (self.read_byte() as usize);
-                    self.push(*chunk.get_constant(const_idx));
+                    self.push(chunk.get_constant(const_idx).clone());
                 }
                 OP_NEGATE => {
                     let value = self.peek(0);
@@ -47,7 +51,8 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(-value));
                     } else {
-                        // emit an error if we get here
+                        println!("[line {}]: Error: {}", chunk.get_line(self.ip), "asdf");
+                        return self.runtime_error("Cannot negate non-number value", chunk);
                     }
                 }
                 OP_ADD => {
@@ -58,7 +63,10 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a + b));
                     } else {
-                        // emit an error here
+                        return self.runtime_error(
+                            "+ operands must be both numbers or both strings",
+                            chunk,
+                        );
                     }
                 }
                 OP_SUBTRACT => {
@@ -69,7 +77,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a - b));
                     } else {
-                        // emit an error here
+                        return self.runtime_error("- operands must be both numbers", chunk);
                     }
                 }
                 OP_MULTIPLY => {
@@ -80,7 +88,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a * b));
                     } else {
-                        // emit an error here
+                        return self.runtime_error("* operands must be both numbers", chunk);
                     }
                 }
                 OP_DIVIDE => {
@@ -91,7 +99,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a / b));
                     } else {
-                        // emit an error here
+                        return self.runtime_error("/ operands must be both numbers", chunk);
                     }
                 }
                 OP_NIL => {
@@ -120,7 +128,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Bool(a > b));
                     } else {
-                        // emit an error here
+                        return self.runtime_error("< operands must be both numbers", chunk);
                     }
                 }
                 OP_LESS => {
@@ -131,7 +139,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Bool(a < b));
                     } else {
-                        // emit an error here
+                        return self.runtime_error("> operands must be both numbers", chunk);
                     }
                 }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
@@ -156,8 +164,15 @@ impl GravloxVM {
     }
 
     fn peek(&self, depth: usize) -> Value {
-        self.stack[self.stack.len() - depth - 1]
+        self.stack[self.stack.len() - depth - 1].clone()
     }
 
-    fn runtime_error() {}
+    fn runtime_error(&self, message: &str, chunk: &Chunk) -> Result<(), GravloxError> {
+        let line = chunk.get_line(self.ip);
+
+        Err(GravloxError::RuntimeError(format!(
+            "[line {}] Error: {}",
+            line, message
+        )))
+    }
 }
