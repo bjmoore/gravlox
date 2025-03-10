@@ -53,3 +53,18 @@ impl Display for Obj {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_truthiness_primitive() {
+        assert_eq!(Value::Nil.as_bool(), false);
+        assert_eq!(Value::Number(0.0).as_bool(), false);
+        assert_eq!(Value::Number(1.0).as_bool(), true);
+        assert_eq!(Value::Bool(false).as_bool(), false);
+        assert_eq!(Value::Bool(true).as_bool(), true);
+    }
+}
