@@ -26,7 +26,7 @@ impl Value {
         match self {
             Value::Bool(b) => *b,
             Value::Nil => false,
-            Value::Number(n) => *n == 0f64,
+            Value::Number(n) => *n != 0f64,
             Value::ObjRef(_) => true,
         }
     }

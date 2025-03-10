@@ -8,11 +8,6 @@ const GRAVLOX_PATH: &str = "./target/debug/gravlox";
 const TEST_DIR: &str = "./test";
 
 fn main() -> Result<(), Box<dyn Error>> {
-    //foreach test file:
-    // read in the test file
-    // parse out all the expectations
-    // feed test file to gravlox
-    // consume stdout and check the expects in order
     let expect_regex = Regex::new("// expect: (.*)")?;
     for test_file in fs::read_dir(TEST_DIR)? {
         let test_file = test_file?;
@@ -24,9 +19,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // put these into a vec
         for line in contents.lines() {
-            match expect_regex.captures(line) {
-                Some(captures) => expectations.push(captures.get(1).unwrap().as_str().to_string()),
-                None => (),
+            if let Some(captures) = expect_regex.captures(line) {
+                if let Some(expected_value) = captures.get(1) {
+                    expectations.push(expected_value.as_str());
+                }
             }
         }
 
