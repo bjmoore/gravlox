@@ -1,9 +1,13 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::chunk::Chunk;
 use crate::error::GravloxError;
 use crate::lexer::Scanner;
 use crate::op::*;
 use crate::token::Token;
 use crate::token::TokenType;
+use crate::value::Obj;
 use crate::value::Value;
 
 pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
@@ -14,6 +18,7 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
         had_error: false,
         panic_mode: false,
         compiling_chunk: chunk,
+        heap: Vec::new(),
     };
 
     parser.advance();
@@ -21,6 +26,7 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
     parser.consume(TokenType::Eof, "Expect end of expression.");
     parser.end_compiler(debug);
 
+    // Return heap objects here
     !parser.had_error
 }
 
@@ -31,6 +37,7 @@ struct Parser<'a> {
     had_error: bool,
     panic_mode: bool,
     compiling_chunk: &'a mut Chunk,
+    heap: Vec<Rc<RefCell<Obj>>>,
 }
 
 impl<'a> Parser<'a> {
@@ -106,6 +113,10 @@ impl<'a> Parser<'a> {
             );
         }
         self.had_error = true;
+    }
+
+    fn heap_add(&mut self, obj: Rc<RefCell<Obj>>) {
+        self.heap.push(obj);
     }
 }
 
@@ -192,6 +203,13 @@ fn literal(parser: &mut Parser) {
     }
 }
 
+fn string(parser: &mut Parser) {
+    let str_value = parser.lexer.lexeme(parser.previous);
+    let heap_obj = Rc::new(RefCell::new(Obj::String(str_value.to_owned())));
+    parser.heap_add(heap_obj.clone());
+    parser.emit_constant(Value::ObjRef(heap_obj));
+}
+
 struct ParseRule(
     Option<Box<dyn FnMut(&mut Parser)>>,
     Option<Box<dyn FnMut(&mut Parser)>>,
@@ -236,7 +254,7 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::Less         => ParseRule(None,                     Some(Box::new(binary)), Precedence::Comparison),
         TokenType::LessEqual    => ParseRule(None,                     Some(Box::new(binary)), Precedence::Comparison),
         TokenType::Identifier   => ParseRule(None,                     None,                   Precedence::None),
-        TokenType::String       => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::String       => ParseRule(Some(Box::new(string)),   None,                   Precedence::None),
         TokenType::Number       => ParseRule(Some(Box::new(number)),   None,                   Precedence::None),
         TokenType::And          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Class        => ParseRule(None,                     None,                   Precedence::None),

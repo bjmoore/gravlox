@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::ptr;
+use std::rc::Rc;
 
 use crate::chunk::Chunk;
 use crate::error::GravloxError;
@@ -9,7 +11,7 @@ use crate::value::Value;
 pub struct GravloxVM {
     ip: *const u8,
     stack: Vec<Value>,
-    heap: Vec<Obj>,
+    heap: Vec<Rc<RefCell<Obj>>>,
 }
 
 impl GravloxVM {

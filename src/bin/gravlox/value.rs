@@ -16,7 +16,7 @@ impl Display for Value {
             Value::Number(v) => write!(f, "{}", v),
             Value::Nil => write!(f, "nil"),
             Value::Bool(v) => write!(f, "{}", v),
-            Value::ObjRef(v) => write!(f, "{:?}", v.borrow()),
+            Value::ObjRef(v) => write!(f, "{}", v.borrow()),
         }
     }
 }
