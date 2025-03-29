@@ -22,7 +22,7 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
     };
 
     parser.advance();
-    expression(&mut parser);
+    declaration(&mut parser);
     parser.consume(TokenType::Eof, "Expect end of expression.");
     parser.end_compiler(debug);
 
@@ -143,6 +143,14 @@ fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
             None => (),
         }
     }
+}
+
+fn declaration(parser: &mut Parser) {
+    statement(parser);
+}
+
+fn statement(parser: &mut Parser) {
+    expression(parser);
 }
 
 fn expression(parser: &mut Parser) {
