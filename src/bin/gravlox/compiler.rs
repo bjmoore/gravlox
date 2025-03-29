@@ -56,6 +56,36 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn synchronize(&mut self) {
+        self.panic_mode = false;
+
+        loop {
+            if self.current.t == TokenType::Eof {
+                return;
+            }
+
+            if self.previous.t == TokenType::Semicolon {
+                return;
+            }
+
+            match self.current.t {
+                TokenType::Class
+                | TokenType::Fun
+                | TokenType::Var
+                | TokenType::For
+                | TokenType::If
+                | TokenType::While
+                | TokenType::Print
+                | TokenType::Return => {
+                    return;
+                }
+                _ => (),
+            }
+
+            self.advance();
+        }
+    }
+
     fn r#match(&mut self, t: TokenType) -> bool {
         if self.current.t == t {
             self.advance();
@@ -156,6 +186,10 @@ fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
 
 fn declaration(parser: &mut Parser) {
     statement(parser);
+
+    if parser.panic_mode {
+        parser.synchronize();
+    }
 }
 
 fn statement(parser: &mut Parser) {
