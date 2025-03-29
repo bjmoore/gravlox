@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for test_file in fs::read_dir(TEST_DIR)? {
         let test_file = test_file?;
         let test_name = test_file.file_name().into_string().unwrap();
-        print!("Runing test: {} ... ", test_name);
+        print!("Running test: {} ... ", test_name);
         let contents = fs::read_to_string(test_file.path())?;
 
         let mut expectations = Vec::new();
