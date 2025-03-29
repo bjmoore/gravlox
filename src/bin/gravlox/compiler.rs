@@ -159,7 +159,7 @@ fn declaration(parser: &mut Parser) {
 }
 
 fn statement(parser: &mut Parser) {
-    if (parser.r#match(TokenType::Print)) {
+    if parser.r#match(TokenType::Print) {
         print_statement(parser);
     } else {
         expression_statement(parser);
