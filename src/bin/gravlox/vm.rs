@@ -34,7 +34,6 @@ impl GravloxVM {
 
             match opcode {
                 OP_RETURN => {
-                    println!("{}", self.pop());
                     return Ok(());
                 }
                 OP_CONSTANT => {
