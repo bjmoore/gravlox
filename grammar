@@ -1,0 +1,8 @@
+declaration -> classDecl
+            |  funDecl
+            |  varDecl
+            |  statement ;
+
+statement -> exprStmt
+          |  printStmt
+          |  block ;
