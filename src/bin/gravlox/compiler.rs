@@ -56,6 +56,15 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn r#match(&mut self, t: TokenType) -> bool {
+        if self.current.t == t {
+            self.advance();
+            return true;
+        }
+
+        false
+    }
+
     fn consume(&mut self, t: TokenType, message: &'static str) {
         if self.current.t == t {
             self.advance();
@@ -150,7 +159,23 @@ fn declaration(parser: &mut Parser) {
 }
 
 fn statement(parser: &mut Parser) {
+    if (parser.r#match(TokenType::Print)) {
+        print_statement(parser);
+    } else {
+        expression_statement(parser);
+    }
+}
+
+fn print_statement(parser: &mut Parser) {
     expression(parser);
+    parser.consume(TokenType::Semicolon, "Expect ';' after value.");
+    parser.emit_byte(OP_PRINT);
+}
+
+fn expression_statement(parser: &mut Parser) {
+    expression(parser);
+    parser.consume(TokenType::Semicolon, "Expect ';' after expression.");
+    parser.emit_byte(OP_POP);
 }
 
 fn expression(parser: &mut Parser) {

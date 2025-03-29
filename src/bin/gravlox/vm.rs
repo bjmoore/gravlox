@@ -144,6 +144,13 @@ impl GravloxVM {
                         return self.runtime_error("> operands must be both numbers", chunk);
                     }
                 }
+                OP_POP => {
+                    self.pop();
+                }
+                OP_PRINT => {
+                    let value = self.pop();
+                    println!("{}", value);
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }

@@ -211,6 +211,9 @@ impl Display for Chunk {
                 OP_LESS => {
                     print_simple_instr(f, idx, &line_display, "less")?;
                 }
+                OP_POP => {
+                    print_simple_instr(f, idx, &line_display, "pop")?;
+                }
                 _ => unreachable!(
                     "Unknown opcode while printing chunk: 0x{:02x}",
                     self.code[idx]
