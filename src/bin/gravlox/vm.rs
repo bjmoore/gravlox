@@ -63,7 +63,6 @@ impl GravloxVM {
                 OP_ADD => {
                     let b = self.peek(0);
                     let a = self.peek(1);
-                    println!("{:?} {:?}", a, b);
                     if let (Value::Number(a), Value::Number(b)) = (a, b) {
                         let _ = self.pop();
                         let _ = self.pop();
