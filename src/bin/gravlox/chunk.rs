@@ -58,7 +58,7 @@ impl Chunk {
         }
     }
 
-    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<(), GravloxError> {
+    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<usize, GravloxError> {
         if self.constants.len() == MAX_CONSTANTS {
             return Err(GravloxError::CompileError(
                 "Too many constants in a single chunk.",
@@ -66,16 +66,7 @@ impl Chunk {
         }
         self.constants.push(value);
         let const_idx = self.constants.len() - 1;
-        if const_idx < 256 {
-            self.add_code(OP_CONSTANT, line_number);
-            self.add_code(const_idx as u8, line_number);
-        } else {
-            self.add_code(OP_CONSTANT_LONG, line_number);
-            self.add_code((const_idx >> 16) as u8, line_number);
-            self.add_code((const_idx >> 8) as u8, line_number);
-            self.add_code(const_idx as u8, line_number);
-        }
-        Ok(())
+        Ok(const_idx)
     }
 
     pub fn get_constant(&self, const_idx: usize) -> &Value {
@@ -213,6 +204,33 @@ impl Display for Chunk {
                 }
                 OP_POP => {
                     print_simple_instr(f, idx, &line_display, "pop")?;
+                }
+                OP_PRINT => {
+                    print_simple_instr(f, idx, &line_display, "print")?;
+                }
+                OP_DEFINE_GLOBAL => {
+                    let const_idx = self.code[idx + 1] as usize;
+                    print_const_instr(
+                        f,
+                        idx,
+                        &line_display,
+                        "def_global",
+                        self.constants[const_idx].borrow(),
+                    )?;
+                    idx += 1;
+                    current_line_idx += 1;
+                }
+                OP_GET_GLOBAL => {
+                    let const_idx = self.code[idx + 1] as usize;
+                    print_const_instr(
+                        f,
+                        idx,
+                        &line_display,
+                        "get_global",
+                        self.constants[const_idx].borrow(),
+                    )?;
+                    idx += 1;
+                    current_line_idx += 1;
                 }
                 _ => unreachable!(
                     "Unknown opcode while printing chunk: 0x{:02x}",

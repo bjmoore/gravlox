@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ptr;
 use std::rc::Rc;
 
@@ -12,6 +13,7 @@ pub struct GravloxVM {
     ip: *const u8,
     stack: Vec<Value>,
     heap: Vec<Rc<RefCell<Obj>>>,
+    globals: HashMap<String, Value>,
 }
 
 impl GravloxVM {
@@ -20,6 +22,7 @@ impl GravloxVM {
             ip: ptr::null(),
             stack: Vec::new(),
             heap: Vec::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -60,6 +63,7 @@ impl GravloxVM {
                 OP_ADD => {
                     let b = self.peek(0);
                     let a = self.peek(1);
+                    println!("{:?} {:?}", a, b);
                     if let (Value::Number(a), Value::Number(b)) = (a, b) {
                         let _ = self.pop();
                         let _ = self.pop();
@@ -150,6 +154,39 @@ impl GravloxVM {
                 OP_PRINT => {
                     let value = self.pop();
                     println!("{}", value);
+                }
+                OP_DEFINE_GLOBAL => {
+                    let const_idx = self.read_byte() as usize;
+                    let name = match chunk.get_constant(const_idx) {
+                        Value::ObjRef(string) => {
+                            match string.borrow().clone() {
+                                Obj::String(s) => s,
+                                _ => unreachable!()
+                            }
+                        }
+                        _ => unreachable!()
+                    };
+                    let value = self.peek(0);
+
+                    self.globals.insert(name, value);
+                }
+                OP_GET_GLOBAL => {
+                    let const_idx = self.read_byte() as usize;
+                    let name = match chunk.get_constant(const_idx) {
+                        Value::ObjRef(string) => {
+                            match string.borrow().clone() {
+                                Obj::String(s) => s,
+                                _ => unreachable!()
+                            }
+                        }
+                        _ => unreachable!()
+                    };
+                    let value = match self.globals.get(&name) {
+                        Some(value) => value.clone(),
+                        None => { return self.runtime_error("Undefined variable", chunk); }
+                    };
+
+                    self.push(value);
                 }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }

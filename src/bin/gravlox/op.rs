@@ -17,6 +17,8 @@ mod ops {
     pub const OP_LESS:          u8 = 0x0E;
     pub const OP_POP:           u8 = 0x0F;
     pub const OP_PRINT:         u8 = 0x10;
+    pub const OP_DEFINE_GLOBAL: u8 = 0x11;
+    pub const OP_GET_GLOBAL:    u8 = 0x12;
 }
 
 pub use ops::*;

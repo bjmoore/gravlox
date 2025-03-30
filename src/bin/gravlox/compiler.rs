@@ -23,7 +23,6 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
 
     parser.advance();
     declaration(&mut parser);
-    parser.consume(TokenType::Eof, "Expect end of expression.");
     parser.end_compiler(debug);
 
     // Return heap objects here
@@ -129,11 +128,29 @@ impl<'a> Parser<'a> {
         self.emit_byte(OP_RETURN);
     }
 
-    fn emit_constant(&mut self, value: Value) {
+    fn emit_constant(&mut self, value: Value) -> usize {
         let line_number = self.previous.line;
-        self.current_chunk()
+        let const_idx = self
+            .current_chunk()
             .add_constant(value, line_number)
-            .unwrap_or_else(|e| self.error_at(self.previous, e));
+            .unwrap_or_else(|e| {
+                self.error_at(self.previous, e);
+                0
+            });
+
+        if const_idx < 256 {
+            self.current_chunk().add_code(OP_CONSTANT, line_number);
+            self.current_chunk().add_code(const_idx as u8, line_number);
+        } else {
+            self.current_chunk().add_code(OP_CONSTANT_LONG, line_number);
+            self.current_chunk()
+                .add_code((const_idx >> 16) as u8, line_number);
+            self.current_chunk()
+                .add_code((const_idx >> 8) as u8, line_number);
+            self.current_chunk().add_code(const_idx as u8, line_number);
+        }
+
+        const_idx
     }
 
     fn error_at(&mut self, token: Token, err: GravloxError) {
@@ -156,6 +173,10 @@ impl<'a> Parser<'a> {
 
     fn heap_add(&mut self, obj: Rc<RefCell<Obj>>) {
         self.heap.push(obj);
+    }
+
+    fn lexeme(&self) -> &str {
+        self.lexer.lexeme(self.previous)
     }
 }
 
@@ -185,11 +206,51 @@ fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
 }
 
 fn declaration(parser: &mut Parser) {
-    statement(parser);
+    if parser.r#match(TokenType::Var) {
+        var_declaration(parser);
+    } else {
+        statement(parser);
+    }
 
     if parser.panic_mode {
         parser.synchronize();
     }
+}
+
+fn var_declaration(parser: &mut Parser) {
+    let global = parse_variable(parser, "Expect variable name.");
+
+    if parser.r#match(TokenType::Equal) {
+        expression(parser);
+    } else {
+        parser.emit_byte(OP_NIL);
+    }
+
+    define_variable(parser, global);
+}
+
+fn parse_variable(parser: &mut Parser, message: &'static str) -> usize {
+    parser.consume(TokenType::Identifier, message);
+    identifier_constant(parser)
+}
+
+fn identifier_constant(parser: &mut Parser) -> usize {
+    let name = parser.lexeme();
+    let heap_obj = Rc::new(RefCell::new(Obj::String(name.to_owned())));
+    parser.heap_add(heap_obj.clone());
+    let line = parser.previous.line;
+    parser
+        .current_chunk()
+        .add_constant(Value::ObjRef(heap_obj), line)
+        .unwrap_or_else(|e| {
+            parser.error_at(parser.previous, e);
+            0
+        })
+}
+
+fn define_variable(parser: &mut Parser, global: usize) {
+    // TODO: Since we support 24-bit constants with OP_CONSTANT_LONG, we should have an OP_DEFINE_GLOBAL_LONG
+    parser.emit_bytes(OP_DEFINE_GLOBAL, global as u8);
 }
 
 fn statement(parser: &mut Parser) {
@@ -277,6 +338,15 @@ fn string(parser: &mut Parser) {
     parser.emit_constant(Value::ObjRef(heap_obj));
 }
 
+fn variable(parser: &mut Parser) {
+    named_variable(parser);
+}
+
+fn named_variable(parser: &mut Parser) {
+    let arg = identifier_constant(parser);
+    parser.emit_bytes(OP_GET_GLOBAL, arg as u8);
+}
+
 struct ParseRule(
     Option<Box<dyn FnMut(&mut Parser)>>,
     Option<Box<dyn FnMut(&mut Parser)>>,
@@ -320,7 +390,7 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::GreaterEqual => ParseRule(None,                     Some(Box::new(binary)), Precedence::Comparison),
         TokenType::Less         => ParseRule(None,                     Some(Box::new(binary)), Precedence::Comparison),
         TokenType::LessEqual    => ParseRule(None,                     Some(Box::new(binary)), Precedence::Comparison),
-        TokenType::Identifier   => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::Identifier   => ParseRule(Some(Box::new(variable)), None,                   Precedence::None),
         TokenType::String       => ParseRule(Some(Box::new(string)),   None,                   Precedence::None),
         TokenType::Number       => ParseRule(Some(Box::new(number)),   None,                   Precedence::None),
         TokenType::And          => ParseRule(None,                     None,                   Precedence::None),
