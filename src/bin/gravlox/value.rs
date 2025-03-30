@@ -39,10 +39,6 @@ impl Value {
             _ => false, // Different types are unequal
         }
     }
-
-    pub fn is_number(&self) -> bool {
-        matches!(self, Value::Number(_))
-    }
 }
 
 #[derive(Debug, Clone)]
