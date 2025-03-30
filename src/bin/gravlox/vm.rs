@@ -63,15 +63,34 @@ impl GravloxVM {
                 OP_ADD => {
                     let b = self.peek(0);
                     let a = self.peek(1);
-                    if let (Value::Number(a), Value::Number(b)) = (a, b) {
-                        let _ = self.pop();
-                        let _ = self.pop();
-                        self.push(Value::Number(a + b));
-                    } else {
-                        return self.runtime_error(
-                            "+ operands must be both numbers or both strings",
-                            chunk,
-                        );
+
+                    match (a, b) {
+                        (Value::Number(a), Value::Number(b)) => {
+                            self.pop(); 
+                            self.pop();
+                            self.push(Value::Number(a + b));
+                        }
+                        (Value::ObjRef(a), Value::ObjRef(b)) 
+                        if a.borrow().is_string() && b.borrow().is_string() => {
+                            self.pop();
+                            self.pop();
+                            let obj_a = a.borrow().clone();
+                            let obj_b = b.borrow().clone();
+                            match (obj_a, obj_b) {
+                                (Obj::String(a), Obj::String(b)) => {
+                                    let heap_obj = Rc::new(RefCell::new(Obj::String(a + &b)));
+                                    self.heap.push(heap_obj.clone());
+                                    self.push(Value::ObjRef(heap_obj));
+                                }
+                                _ => unreachable!()
+                            }
+                        }
+                        _ => {
+                            return self.runtime_error(
+                                "+ operands must be both numbers or both strings",
+                                chunk,
+                            );
+                        }
                     }
                 }
                 OP_SUBTRACT => {
@@ -157,8 +176,8 @@ impl GravloxVM {
                 OP_DEFINE_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(string) => {
-                            match string.borrow().clone() {
+                        Value::ObjRef(obj) => {
+                            match obj.borrow().clone() {
                                 Obj::String(s) => s,
                                 _ => unreachable!()
                             }
@@ -172,8 +191,8 @@ impl GravloxVM {
                 OP_GET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(string) => {
-                            match string.borrow().clone() {
+                        Value::ObjRef(obj) => {
+                            match obj.borrow().clone() {
                                 Obj::String(s) => s,
                                 _ => unreachable!()
                             }
@@ -190,8 +209,8 @@ impl GravloxVM {
                 OP_SET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(string) => {
-                            match string.borrow().clone() {
+                        Value::ObjRef(obj) => {
+                            match obj.borrow().clone() {
                                 Obj::String(s) => s,
                                 _ => unreachable!()
                             }

@@ -1,1 +1,1 @@
-print "foo! " + "bar"; // expect: "foo! bar"
+print "foo! " + "bar"; // expect: foo! bar

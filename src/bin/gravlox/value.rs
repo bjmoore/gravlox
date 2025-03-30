@@ -39,6 +39,10 @@ impl Value {
             _ => false, // Different types are unequal
         }
     }
+
+    pub fn is_number(&self) -> bool {
+        matches!(self, Value::Number(_))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +55,12 @@ impl Display for Obj {
         match self {
             Obj::String(s) => write!(f, "{}", s),
         }
+    }
+}
+
+impl Obj {
+    pub fn is_string(&self) -> bool {
+        matches!(self, Obj::String(_))
     }
 }
 
