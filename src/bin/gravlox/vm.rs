@@ -41,9 +41,10 @@ impl GravloxVM {
                     self.push(chunk.get_constant(const_idx).clone());
                 }
                 OP_CONSTANT_LONG => {
-                    let const_idx = (self.read_byte() as usize)
-                        << 16 + (self.read_byte() as usize)
-                        << 8 + (self.read_byte() as usize);
+                    #[rustfmt::skip]
+                    let const_idx = (self.read_byte() as usize) << 16 
+                                         + (self.read_byte() as usize) << 8 
+                                         + (self.read_byte() as usize);
                     self.push(chunk.get_constant(const_idx).clone());
                 }
                 OP_NEGATE => {
