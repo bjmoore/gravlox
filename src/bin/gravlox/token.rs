@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -44,9 +44,12 @@ pub enum TokenType {
     While,
 
     Eof,
+
+    #[default]
+    Null
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Token {
     pub t: TokenType,
     pub start: usize,
@@ -61,15 +64,6 @@ impl Token {
             start,
             len,
             line,
-        }
-    }
-
-    pub fn empty() -> Self {
-        Self {
-            t: TokenType::Eof,
-            start: 0,
-            len: 0,
-            line: 0,
         }
     }
 }

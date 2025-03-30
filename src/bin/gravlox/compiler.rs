@@ -12,8 +12,8 @@ use crate::value::Value;
 
 pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
     let mut parser = Parser {
-        current: Token::empty(),
-        previous: Token::empty(),
+        current: Token::default(),
+        previous: Token::default(),
         lexer: Scanner::new(source),
         had_error: false,
         panic_mode: false,
@@ -422,6 +422,7 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::Var          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::While        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Eof          => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::Null         => unreachable!("ERROR: Attempted to parse a null token"),
     };
 }
 
