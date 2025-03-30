@@ -339,7 +339,7 @@ fn literal(parser: &mut Parser) {
 }
 
 fn string(parser: &mut Parser) {
-    let str_value = parser.lexer.lexeme(parser.previous);
+    let str_value = parser.lexer.string_lexeme(parser.previous);
     let heap_obj = Rc::new(RefCell::new(Obj::String(str_value.to_owned())));
     parser.heap_add(heap_obj.clone());
     parser.emit_constant(Value::ObjRef(heap_obj));

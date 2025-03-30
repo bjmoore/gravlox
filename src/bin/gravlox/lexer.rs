@@ -22,6 +22,10 @@ impl Scanner {
         &self.source[token.start..(token.start + token.len)]
     }
 
+    pub fn string_lexeme(&self, token: Token) -> &str {
+        &self.source[token.start + 1..(token.start + token.len - 1)]
+    }
+
     pub fn next_token(&mut self) -> Result<Token, GravloxError> {
         self.skip_whitespace();
         self.start = self.current;
