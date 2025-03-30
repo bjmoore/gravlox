@@ -1,0 +1,4 @@
+var a;
+print a; // expect: nil
+a = 5;
+print a; // expect: 5

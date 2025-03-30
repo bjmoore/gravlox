@@ -187,6 +187,23 @@ impl GravloxVM {
 
                     self.push(value);
                 }
+                OP_SET_GLOBAL => {
+                    let const_idx = self.read_byte() as usize;
+                    let name = match chunk.get_constant(const_idx) {
+                        Value::ObjRef(string) => {
+                            match string.borrow().clone() {
+                                Obj::String(s) => s,
+                                _ => unreachable!()
+                            }
+                        }
+                        _ => unreachable!()
+                    };
+                    if self.globals.contains_key(&name) {
+                        self.globals.insert(name, self.peek(0));
+                    } else {
+                        return self.runtime_error("Undefined variable", chunk);
+                    }
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }

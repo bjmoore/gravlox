@@ -228,7 +228,10 @@ fn var_declaration(parser: &mut Parser) {
         parser.emit_byte(OP_NIL);
     }
 
-    parser.consume(TokenType::Semicolon, "Expect ';' after variable declaration.");
+    parser.consume(
+        TokenType::Semicolon,
+        "Expect ';' after variable declaration.",
+    );
 
     define_variable(parser, global);
 }
@@ -347,8 +350,13 @@ fn variable(parser: &mut Parser) {
 }
 
 fn named_variable(parser: &mut Parser) {
-    let arg = identifier_constant(parser);
-    parser.emit_bytes(OP_GET_GLOBAL, arg as u8);
+    let arg = identifier_constant(parser) as u8;
+    if parser.r#match(TokenType::Equal) {
+        expression(parser);
+        parser.emit_bytes(OP_SET_GLOBAL, arg);
+    } else {
+        parser.emit_bytes(OP_GET_GLOBAL, arg as u8);
+    }
 }
 
 struct ParseRule(
