@@ -22,7 +22,9 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
     };
 
     parser.advance();
-    declaration(&mut parser);
+    while !parser.r#match(TokenType::Eof) {
+        declaration(&mut parser);
+    }
     parser.end_compiler(debug);
 
     // Return heap objects here
@@ -225,6 +227,8 @@ fn var_declaration(parser: &mut Parser) {
     } else {
         parser.emit_byte(OP_NIL);
     }
+
+    parser.consume(TokenType::Semicolon, "Expect ';' after variable declaration.");
 
     define_variable(parser, global);
 }
