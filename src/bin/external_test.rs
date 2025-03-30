@@ -42,12 +42,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
+        if expectations.len() > 0 {
+            passing = false;
+        }
+
         if passing {
             println!("pass!");
         } else {
             println!("\x1b[0;31mfail!\x1b[0m");
             for failure in failed_expectations {
                 println!("{}", failure);
+            }
+            for missed_expectation in expectations {
+                println!("Expected, not found: {}", missed_expectation);
             }
         }
     }
