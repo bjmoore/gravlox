@@ -20,6 +20,8 @@ mod ops {
     pub const OP_DEFINE_GLOBAL: u8 = 0x11;
     pub const OP_GET_GLOBAL:    u8 = 0x12;
     pub const OP_SET_GLOBAL:    u8 = 0x13;
+    pub const OP_GET_LOCAL:     u8 = 0x14;
+    pub const OP_SET_LOCAL:     u8 = 0x15;
 }
 
 pub use ops::*;

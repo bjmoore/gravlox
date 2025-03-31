@@ -19,6 +19,9 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
         panic_mode: false,
         compiling_chunk: chunk,
         heap: Vec::new(),
+        locals: [Local::default(); MAX_LOCALS],
+        local_count: 0,
+        scope_depth: 0,
     };
 
     parser.advance();
@@ -31,6 +34,14 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
     !parser.had_error
 }
 
+const MAX_LOCALS: usize = 256;
+
+#[derive(Debug, Default, Clone, Copy)]
+struct Local {
+    name: Token,
+    depth: usize,
+}
+
 struct Parser<'a> {
     current: Token,
     previous: Token,
@@ -39,6 +50,9 @@ struct Parser<'a> {
     panic_mode: bool,
     compiling_chunk: &'a mut Chunk,
     heap: Vec<Rc<RefCell<Obj>>>,
+    locals: [Local; MAX_LOCALS],
+    local_count: usize,
+    scope_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -180,6 +194,36 @@ impl<'a> Parser<'a> {
     fn lexeme(&self) -> &str {
         self.lexer.lexeme(self.previous)
     }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+
+        while self.local_count > 0 && self.locals[self.local_count - 1].depth > self.scope_depth {
+            self.emit_byte(OP_POP);
+            self.local_count -= 1;
+        }
+    }
+
+    fn add_local(&mut self, name: Token) {
+        if self.local_count == MAX_LOCALS {
+            self.error_at(
+                self.previous,
+                GravloxError::CompileError("Too many local variables"),
+            );
+            return;
+        }
+
+        let local = &mut self.locals[self.local_count];
+
+        local.name = name;
+        local.depth = self.scope_depth;
+
+        self.local_count += 1;
+    }
 }
 
 fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
@@ -208,7 +252,10 @@ fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
     }
 
     if assignable && parser.r#match(TokenType::Equal) {
-        parser.error_at(parser.previous, GravloxError::CompileError("Invalid assignment target"));
+        parser.error_at(
+            parser.previous,
+            GravloxError::CompileError("Invalid assignment target"),
+        );
     }
 }
 
@@ -243,7 +290,36 @@ fn var_declaration(parser: &mut Parser) {
 
 fn parse_variable(parser: &mut Parser, message: &'static str) -> usize {
     parser.consume(TokenType::Identifier, message);
+
+    declare_variable(parser);
+    if parser.scope_depth > 0 {
+        return 0;
+    }
+
     identifier_constant(parser)
+}
+
+fn declare_variable(parser: &mut Parser) {
+    if parser.scope_depth == 0 {
+        return;
+    }
+
+    let name = parser.previous;
+    for i in (0..parser.local_count).rev() {
+        let local = parser.locals[i];
+        if local.depth < parser.scope_depth {
+            break;
+        }
+
+        if identifers_equal(parser, name, local.name) {
+            // TODO: error here
+            parser.error_at(
+                parser.previous,
+                GravloxError::CompileError("Variable already defined in this scope."),
+            );
+        }
+    }
+    parser.add_local(name);
 }
 
 fn identifier_constant(parser: &mut Parser) -> usize {
@@ -260,7 +336,18 @@ fn identifier_constant(parser: &mut Parser) -> usize {
         })
 }
 
+fn identifers_equal(parser: &Parser, a: Token, b: Token) -> bool {
+    if a.len != b.len {
+        return false;
+    }
+    parser.lexer.lexeme(a) == parser.lexer.lexeme(b)
+}
+
 fn define_variable(parser: &mut Parser, global: usize) {
+    if parser.scope_depth > 0 {
+        return;
+    }
+
     // TODO: Since we support 24-bit constants with OP_CONSTANT_LONG, we should have an OP_DEFINE_GLOBAL_LONG
     parser.emit_bytes(OP_DEFINE_GLOBAL, global as u8);
 }
@@ -268,6 +355,11 @@ fn define_variable(parser: &mut Parser, global: usize) {
 fn statement(parser: &mut Parser) {
     if parser.r#match(TokenType::Print) {
         print_statement(parser);
+    } else if parser.r#match(TokenType::LeftBrace) {
+        // block statement
+        parser.begin_scope();
+        block(parser);
+        parser.end_scope();
     } else {
         expression_statement(parser);
     }
@@ -283,6 +375,14 @@ fn expression_statement(parser: &mut Parser) {
     expression(parser);
     parser.consume(TokenType::Semicolon, "Expect ';' after expression.");
     parser.emit_byte(OP_POP);
+}
+
+fn block(parser: &mut Parser) {
+    while !(parser.current.t == TokenType::RightBrace) && !(parser.current.t == TokenType::Eof) {
+        declaration(parser);
+    }
+
+    parser.consume(TokenType::RightBrace, "Expect '}' after block.");
 }
 
 fn expression(parser: &mut Parser) {
@@ -355,13 +455,31 @@ fn variable(parser: &mut Parser, assignable: bool) {
 }
 
 fn named_variable(parser: &mut Parser, assignable: bool) {
-    let arg = identifier_constant(parser) as u8;
+    let (get_op, set_op, arg) = match resolve_local(parser) {
+        Some(arg) => (OP_GET_LOCAL, OP_SET_LOCAL, arg),
+        None => {
+            let arg = identifier_constant(parser) as u8;
+            (OP_GET_GLOBAL, OP_SET_GLOBAL, arg)
+        }
+    };
+
     if assignable && parser.r#match(TokenType::Equal) {
         expression(parser);
-        parser.emit_bytes(OP_SET_GLOBAL, arg);
+        parser.emit_bytes(set_op, arg);
     } else {
-        parser.emit_bytes(OP_GET_GLOBAL, arg as u8);
+        parser.emit_bytes(get_op, arg);
     }
+}
+
+fn resolve_local(parser: &mut Parser) -> Option<u8> {
+    for i in (0..parser.local_count).rev() {
+        let local = parser.locals[i];
+        if identifers_equal(parser, local.name, parser.previous) {
+            return Some(i as u8);
+        }
+    }
+
+    None
 }
 
 struct ParseRule(

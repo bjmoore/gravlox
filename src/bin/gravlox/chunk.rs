@@ -119,6 +119,20 @@ fn print_const_instr(
     )
 }
 
+fn print_byte_instr(
+    f: &mut Formatter<'_>,
+    byte_index: usize,
+    line_display: &str,
+    name: &str,
+    slot: usize
+) -> std::fmt::Result {
+    writeln!(
+        f,
+        "{:04} {:>4} {} {}",
+        byte_index, line_display, name, slot
+    )
+}
+
 impl Display for Chunk {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut idx = 0;
@@ -240,6 +254,30 @@ impl Display for Chunk {
                         &line_display,
                         "set_global",
                         self.constants[const_idx].borrow(),
+                    )?;
+                    idx += 1;
+                    current_line_idx += 1;
+                }
+                OP_GET_LOCAL => {
+                    let slot = self.code[idx + 1] as usize;
+                    print_byte_instr(
+                        f,
+                        idx,
+                        &line_display,
+                        "get_local",
+                        slot
+                    )?;
+                    idx += 1;
+                    current_line_idx += 1;
+                }
+                OP_SET_LOCAL => {
+                    let slot = self.code[idx + 1] as usize;
+                    print_byte_instr(
+                        f,
+                        idx,
+                        &line_display,
+                        "set_local",
+                        slot
                     )?;
                     idx += 1;
                     current_line_idx += 1;

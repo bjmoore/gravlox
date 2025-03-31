@@ -224,6 +224,14 @@ impl GravloxVM {
                         return self.runtime_error("Undefined variable", chunk);
                     }
                 }
+                OP_GET_LOCAL => {
+                    let slot = self.read_byte() as usize;
+                    self.push(self.stack[slot].clone());
+                }
+                OP_SET_LOCAL => {
+                    let slot = self.read_byte() as usize;
+                    self.stack[slot] = self.peek(0).clone();
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }
