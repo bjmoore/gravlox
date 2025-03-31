@@ -195,15 +195,20 @@ fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
         }
     };
 
-    prefix_rule(parser);
+    let assignable = precedence <= Precedence::Assignment;
+    prefix_rule(parser, assignable);
 
     while precedence < get_rule(parser.current.t).2 {
         parser.advance();
         let infix_rule = get_rule(parser.previous.t).1;
         match infix_rule {
-            Some(mut rule) => rule(parser),
+            Some(mut rule) => rule(parser, assignable),
             None => (),
         }
+    }
+
+    if assignable && parser.r#match(TokenType::Equal) {
+        parser.error_at(parser.previous, GravloxError::CompileError("Invalid assignment target"));
     }
 }
 
@@ -284,7 +289,7 @@ fn expression(parser: &mut Parser) {
     parse_precedence(parser, Precedence::Assignment);
 }
 
-fn unary(parser: &mut Parser) {
+fn unary(parser: &mut Parser, assignable: bool) {
     let operator_type = parser.previous.t;
 
     parse_precedence(parser, Precedence::Unary);
@@ -296,7 +301,7 @@ fn unary(parser: &mut Parser) {
     }
 }
 
-fn binary(parser: &mut Parser) {
+fn binary(parser: &mut Parser, assignable: bool) {
     let operator_type = parser.previous.t;
     let parse_rule = get_rule(operator_type);
     parse_precedence(parser, parse_rule.2.plus_one());
@@ -316,18 +321,18 @@ fn binary(parser: &mut Parser) {
     }
 }
 
-fn grouping(parser: &mut Parser) {
+fn grouping(parser: &mut Parser, assignable: bool) {
     expression(parser);
     parser.consume(TokenType::RightParen, "Expect ')' after expression.");
 }
 
-fn number(parser: &mut Parser) {
+fn number(parser: &mut Parser, assignable: bool) {
     let lexeme = parser.lexer.lexeme(parser.previous);
     let number = lexeme.parse::<f64>().unwrap();
     parser.emit_constant(Value::Number(number));
 }
 
-fn literal(parser: &mut Parser) {
+fn literal(parser: &mut Parser, assignable: bool) {
     let operator_type = parser.previous.t;
 
     match operator_type {
@@ -338,20 +343,20 @@ fn literal(parser: &mut Parser) {
     }
 }
 
-fn string(parser: &mut Parser) {
+fn string(parser: &mut Parser, assignable: bool) {
     let str_value = parser.lexer.string_lexeme(parser.previous);
     let heap_obj = Rc::new(RefCell::new(Obj::String(str_value.to_owned())));
     parser.heap_add(heap_obj.clone());
     parser.emit_constant(Value::ObjRef(heap_obj));
 }
 
-fn variable(parser: &mut Parser) {
-    named_variable(parser);
+fn variable(parser: &mut Parser, assignable: bool) {
+    named_variable(parser, assignable);
 }
 
-fn named_variable(parser: &mut Parser) {
+fn named_variable(parser: &mut Parser, assignable: bool) {
     let arg = identifier_constant(parser) as u8;
-    if parser.r#match(TokenType::Equal) {
+    if assignable && parser.r#match(TokenType::Equal) {
         expression(parser);
         parser.emit_bytes(OP_SET_GLOBAL, arg);
     } else {
@@ -360,8 +365,8 @@ fn named_variable(parser: &mut Parser) {
 }
 
 struct ParseRule(
-    Option<Box<dyn FnMut(&mut Parser)>>,
-    Option<Box<dyn FnMut(&mut Parser)>>,
+    Option<Box<dyn FnMut(&mut Parser, bool)>>,
+    Option<Box<dyn FnMut(&mut Parser, bool)>>,
     Precedence,
 );
 
