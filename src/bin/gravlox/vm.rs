@@ -187,6 +187,7 @@ impl GravloxVM {
                     let value = self.peek(0);
 
                     self.globals.insert(name, value);
+                    self.pop();
                 }
                 OP_GET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
