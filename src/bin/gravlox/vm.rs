@@ -45,9 +45,9 @@ impl GravloxVM {
                 }
                 OP_CONSTANT_LONG => {
                     #[rustfmt::skip]
-                    let const_idx = (self.read_byte() as usize) << 16 
-                                         + (self.read_byte() as usize) << 8 
-                                         + (self.read_byte() as usize);
+                    let const_idx = (self.read_byte() as usize) << 16
+                                  + (self.read_byte() as usize) << 8
+                                  + (self.read_byte() as usize);
                     self.push(chunk.get_constant(const_idx).clone());
                 }
                 OP_NEGATE => {
@@ -66,12 +66,13 @@ impl GravloxVM {
 
                     match (a, b) {
                         (Value::Number(a), Value::Number(b)) => {
-                            self.pop(); 
+                            self.pop();
                             self.pop();
                             self.push(Value::Number(a + b));
                         }
-                        (Value::ObjRef(a), Value::ObjRef(b)) 
-                        if a.borrow().is_string() && b.borrow().is_string() => {
+                        (Value::ObjRef(a), Value::ObjRef(b))
+                            if a.borrow().is_string() && b.borrow().is_string() =>
+                        {
                             self.pop();
                             self.pop();
                             let obj_a = a.borrow().clone();
@@ -82,7 +83,6 @@ impl GravloxVM {
                                     self.heap.push(heap_obj.clone());
                                     self.push(Value::ObjRef(heap_obj));
                                 }
-                                _ => unreachable!()
                             }
                         }
                         _ => {
@@ -176,13 +176,10 @@ impl GravloxVM {
                 OP_DEFINE_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(obj) => {
-                            match obj.borrow().clone() {
-                                Obj::String(s) => s,
-                                _ => unreachable!()
-                            }
-                        }
-                        _ => unreachable!()
+                        Value::ObjRef(obj) => match obj.borrow().clone() {
+                            Obj::String(s) => s,
+                        },
+                        _ => unreachable!(),
                     };
                     let value = self.peek(0);
 
@@ -192,17 +189,16 @@ impl GravloxVM {
                 OP_GET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(obj) => {
-                            match obj.borrow().clone() {
-                                Obj::String(s) => s,
-                                _ => unreachable!()
-                            }
-                        }
-                        _ => unreachable!()
+                        Value::ObjRef(obj) => match obj.borrow().clone() {
+                            Obj::String(s) => s,
+                        },
+                        _ => unreachable!(),
                     };
                     let value = match self.globals.get(&name) {
                         Some(value) => value.clone(),
-                        None => { return self.runtime_error("Undefined variable", chunk); }
+                        None => {
+                            return self.runtime_error("Undefined variable", chunk);
+                        }
                     };
 
                     self.push(value);
@@ -210,13 +206,10 @@ impl GravloxVM {
                 OP_SET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(obj) => {
-                            match obj.borrow().clone() {
-                                Obj::String(s) => s,
-                                _ => unreachable!()
-                            }
-                        }
-                        _ => unreachable!()
+                        Value::ObjRef(obj) => match obj.borrow().clone() {
+                            Obj::String(s) => s,
+                        },
+                        _ => unreachable!(),
                     };
                     if self.globals.contains_key(&name) {
                         self.globals.insert(name, self.peek(0));

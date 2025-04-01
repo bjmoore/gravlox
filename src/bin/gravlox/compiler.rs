@@ -389,7 +389,7 @@ fn expression(parser: &mut Parser) {
     parse_precedence(parser, Precedence::Assignment);
 }
 
-fn unary(parser: &mut Parser, assignable: bool) {
+fn unary(parser: &mut Parser, _assignable: bool) {
     let operator_type = parser.previous.t;
 
     parse_precedence(parser, Precedence::Unary);
@@ -401,7 +401,7 @@ fn unary(parser: &mut Parser, assignable: bool) {
     }
 }
 
-fn binary(parser: &mut Parser, assignable: bool) {
+fn binary(parser: &mut Parser, _assignable: bool) {
     let operator_type = parser.previous.t;
     let parse_rule = get_rule(operator_type);
     parse_precedence(parser, parse_rule.2.plus_one());
@@ -421,18 +421,18 @@ fn binary(parser: &mut Parser, assignable: bool) {
     }
 }
 
-fn grouping(parser: &mut Parser, assignable: bool) {
+fn grouping(parser: &mut Parser, _assignable: bool) {
     expression(parser);
     parser.consume(TokenType::RightParen, "Expect ')' after expression.");
 }
 
-fn number(parser: &mut Parser, assignable: bool) {
+fn number(parser: &mut Parser, _assignable: bool) {
     let lexeme = parser.lexer.lexeme(parser.previous);
     let number = lexeme.parse::<f64>().unwrap();
     parser.emit_constant(Value::Number(number));
 }
 
-fn literal(parser: &mut Parser, assignable: bool) {
+fn literal(parser: &mut Parser, _assignable: bool) {
     let operator_type = parser.previous.t;
 
     match operator_type {
@@ -443,7 +443,7 @@ fn literal(parser: &mut Parser, assignable: bool) {
     }
 }
 
-fn string(parser: &mut Parser, assignable: bool) {
+fn string(parser: &mut Parser, _assignable: bool) {
     let str_value = parser.lexer.string_lexeme(parser.previous);
     let heap_obj = Rc::new(RefCell::new(Obj::String(str_value.to_owned())));
     parser.heap_add(heap_obj.clone());

@@ -74,11 +74,7 @@ impl Chunk {
     }
 
     pub fn get_line(&self, ip: *const u8) -> u32 {
-        let mut byte_index = 0;
-
-        unsafe {
-            byte_index = ip.offset_from(self.get_ip());
-        }
+        let byte_index = unsafe { ip.offset_from(self.get_ip()) };
 
         let mut current_line = &(0, 0);
         let mut current_line_idx = 0;
@@ -139,7 +135,7 @@ impl Display for Chunk {
         let mut lineinfo_iter = self.lineinfo.iter();
         let mut current_line_idx = 0;
         let mut current_line = &(0, 0);
-        let mut line_display = String::from("   |");
+        let mut line_display;
         writeln!(f, "==== {} ====", self.name)?;
 
         while idx < self.code.len() {
@@ -167,9 +163,10 @@ impl Display for Chunk {
                     current_line_idx += 1;
                 }
                 OP_CONSTANT_LONG => {
-                    let const_idx = (self.code[idx + 1] as usize)
-                        << 16 + (self.code[idx + 2] as usize)
-                        << 8 + (self.code[idx + 3] as usize);
+                    #[rustfmt::skip]
+                    let const_idx = (self.code[idx + 1] as usize) << 16
+			          + (self.code[idx + 2] as usize) << 8
+			          + (self.code[idx + 3] as usize);
                     print_const_instr(
                         f,
                         idx,
@@ -260,25 +257,13 @@ impl Display for Chunk {
                 }
                 OP_GET_LOCAL => {
                     let slot = self.code[idx + 1] as usize;
-                    print_byte_instr(
-                        f,
-                        idx,
-                        &line_display,
-                        "get_local",
-                        slot
-                    )?;
+                    print_byte_instr(f, idx, &line_display, "get_local", slot)?;
                     idx += 1;
                     current_line_idx += 1;
                 }
                 OP_SET_LOCAL => {
                     let slot = self.code[idx + 1] as usize;
-                    print_byte_instr(
-                        f,
-                        idx,
-                        &line_display,
-                        "set_local",
-                        slot
-                    )?;
+                    print_byte_instr(f, idx, &line_display, "set_local", slot)?;
                     idx += 1;
                     current_line_idx += 1;
                 }
