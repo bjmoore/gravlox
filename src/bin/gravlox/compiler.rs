@@ -169,6 +169,28 @@ impl<'a> Parser<'a> {
         const_idx
     }
 
+    // Push these down into the Chunk impl.
+    fn emit_jump(&mut self, instruction: u8) -> usize {
+        self.emit_byte(instruction);
+        self.emit_byte(0xFF);
+        self.emit_byte(0xFF);
+        self.current_chunk().count() - 2
+    }
+
+    fn patch_jump(&mut self, offset: usize) {
+        let jump = self.current_chunk().count() - offset - 2;
+
+        if jump > u16::MAX.into() {
+            self.error_at(
+                self.previous,
+                GravloxError::CompileError("Too much code to jump."),
+            );
+        }
+
+        self.current_chunk().patch_byte(offset, (jump >> 8) as u8);
+        self.current_chunk().patch_byte(offset + 1, jump as u8);
+    }
+
     fn error_at(&mut self, token: Token, err: GravloxError) {
         if self.panic_mode {
             return;
@@ -356,10 +378,11 @@ fn statement(parser: &mut Parser) {
     if parser.r#match(TokenType::Print) {
         print_statement(parser);
     } else if parser.r#match(TokenType::LeftBrace) {
-        // block statement
         parser.begin_scope();
         block(parser);
         parser.end_scope();
+    } else if parser.r#match(TokenType::If) {
+        if_statement(parser);
     } else {
         expression_statement(parser);
     }
@@ -369,6 +392,17 @@ fn print_statement(parser: &mut Parser) {
     expression(parser);
     parser.consume(TokenType::Semicolon, "Expect ';' after value.");
     parser.emit_byte(OP_PRINT);
+}
+
+fn if_statement(parser: &mut Parser) {
+    parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
+    expression(parser);
+    parser.consume(TokenType::RightParen, "Expect ')' after condition.");
+
+    let then_jump = parser.emit_jump(OP_JUMP_IF_FALSE);
+    statement(parser);
+
+    parser.patch_jump(then_jump);
 }
 
 fn expression_statement(parser: &mut Parser) {

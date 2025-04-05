@@ -225,9 +225,25 @@ impl GravloxVM {
                     let slot = self.read_byte() as usize;
                     self.stack[slot] = self.peek(0).clone();
                 }
+                OP_JUMP_IF_FALSE => {
+                    #[rustfmt::skip]
+		    let distance = ((self.read_byte() as usize) << 8)
+			         + ((self.read_byte() as usize));
+                    let condition = self.pop();
+                    if !condition.as_bool() {
+                        self.jump(distance);
+                    }
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }
+    }
+
+    fn peek_byte(&mut self) -> u8 {
+	unsafe {
+	    let ret = *self.ip;
+	    ret
+	}
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -235,6 +251,12 @@ impl GravloxVM {
             let ret = *self.ip;
             self.ip = self.ip.add(1);
             ret
+        }
+    }
+
+    fn jump(&mut self, distance: usize) {
+        unsafe {
+            self.ip = self.ip.add(distance);
         }
     }
 

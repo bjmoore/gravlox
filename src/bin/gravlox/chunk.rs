@@ -90,6 +90,14 @@ impl Chunk {
 
         current_line.0
     }
+
+    pub fn count(&self) -> usize {
+        self.code.len()
+    }
+
+    pub fn patch_byte(&mut self, offset: usize, byte: u8) {
+        self.code[offset] = byte;
+    }
 }
 
 fn print_simple_instr(
@@ -120,12 +128,22 @@ fn print_byte_instr(
     byte_index: usize,
     line_display: &str,
     name: &str,
-    slot: usize
+    slot: usize,
+) -> std::fmt::Result {
+    writeln!(f, "{:04} {:>4} {} {}", byte_index, line_display, name, slot)
+}
+
+fn print_jump_instr(
+    f: &mut Formatter<'_>,
+    byte_index: usize,
+    line_display: &str,
+    name: &str,
+    jump_size: u16,
 ) -> std::fmt::Result {
     writeln!(
         f,
         "{:04} {:>4} {} {}",
-        byte_index, line_display, name, slot
+        byte_index, line_display, name, jump_size
     )
 }
 
@@ -164,9 +182,9 @@ impl Display for Chunk {
                 }
                 OP_CONSTANT_LONG => {
                     #[rustfmt::skip]
-                    let const_idx = (self.code[idx + 1] as usize) << 16
-			          + (self.code[idx + 2] as usize) << 8
-			          + (self.code[idx + 3] as usize);
+                    let const_idx = ((self.code[idx + 1] as usize) << 16)
+			          + ((self.code[idx + 2] as usize) << 8)
+			          + ((self.code[idx + 3] as usize));
                     print_const_instr(
                         f,
                         idx,
@@ -266,6 +284,14 @@ impl Display for Chunk {
                     print_byte_instr(f, idx, &line_display, "set_local", slot)?;
                     idx += 1;
                     current_line_idx += 1;
+                }
+                OP_JUMP_IF_FALSE => {
+                    #[rustfmt::skip]
+		    let jump_size = ((self.code[idx + 1] as u16) << 8)
+			          + ((self.code[idx + 2] as u16));
+                    print_jump_instr(f, idx, &line_display, "jump_false", jump_size)?;
+		    idx += 2;
+		    current_line_idx += 2;
                 }
                 _ => unreachable!(
                     "Unknown opcode while printing chunk: 0x{:02x}",
