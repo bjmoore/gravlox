@@ -229,7 +229,7 @@ impl GravloxVM {
                     #[rustfmt::skip]
 		    let distance = ((self.read_byte() as usize) << 8)
 			         + ((self.read_byte() as usize));
-                    let condition = self.pop();
+                    let condition = self.peek(0);
                     if !condition.as_bool() {
                         self.jump(distance);
                     }
@@ -239,11 +239,13 @@ impl GravloxVM {
         }
     }
 
+    #[allow(dead_code)]
+    // Utility method for debugging.
     fn peek_byte(&mut self) -> u8 {
-	unsafe {
-	    let ret = *self.ip;
-	    ret
-	}
+        unsafe {
+            let ret = *self.ip;
+            ret
+        }
     }
 
     fn read_byte(&mut self) -> u8 {
