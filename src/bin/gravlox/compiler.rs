@@ -191,6 +191,21 @@ impl<'a> Parser<'a> {
         self.current_chunk().patch_byte(offset + 1, jump as u8);
     }
 
+    fn emit_loop(&mut self, location: usize) {
+        self.emit_byte(OP_LOOP);
+
+        let offset = self.current_chunk().count() - location + 2; // +2 because while processing this jump, we will advance ip by 2
+        if offset > u16::MAX.into() {
+            self.error_at(
+                self.previous,
+                GravloxError::CompileError("Loop body too long."),
+            );
+        }
+
+        self.emit_byte((offset >> 8) as u8);
+        self.emit_byte(offset as u8);
+    }
+
     fn error_at(&mut self, token: Token, err: GravloxError) {
         if self.panic_mode {
             return;
@@ -404,6 +419,8 @@ fn statement(parser: &mut Parser) {
         parser.end_scope();
     } else if parser.r#match(TokenType::If) {
         if_statement(parser);
+    } else if parser.r#match(TokenType::While) {
+        while_statement(parser);
     } else {
         expression_statement(parser);
     }
@@ -431,11 +448,27 @@ fn if_statement(parser: &mut Parser) {
 
     parser.emit_byte(OP_POP);
     if parser.r#match(TokenType::Else) {
-	statement(parser);
+        statement(parser);
     }
 
     parser.patch_jump(else_jump);
+}
 
+fn while_statement(parser: &mut Parser) {
+    let loop_start = parser.current_chunk().count();
+
+    parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
+    expression(parser);
+    parser.consume(TokenType::RightParen, "Expect ')' after condition.");
+
+    let exit_loop = parser.emit_jump(OP_JUMP_IF_FALSE);
+    parser.emit_byte(OP_POP);
+
+    statement(parser);
+    parser.emit_loop(loop_start);
+
+    parser.patch_jump(exit_loop);
+    parser.emit_byte(OP_POP);
 }
 
 fn expression_statement(parser: &mut Parser) {

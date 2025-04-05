@@ -301,6 +301,14 @@ impl Display for Chunk {
 		    idx += 2;
 		    current_line_idx += 2;
 		}
+		OP_LOOP => {
+                    #[rustfmt::skip]
+		    let jump_size = ((self.code[idx + 1] as u16) << 8)
+			          + ((self.code[idx + 2] as u16));
+                    print_jump_instr(f, idx, &line_display, "loop", jump_size)?;
+		    idx += 2;
+		    current_line_idx += 2;
+		}
                 _ => unreachable!(
                     "Unknown opcode while printing chunk: 0x{:02x}",
                     self.code[idx]

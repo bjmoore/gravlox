@@ -24,6 +24,7 @@ mod ops {
     pub const OP_SET_LOCAL:     u8 = 0x15;
     pub const OP_JUMP_IF_FALSE: u8 = 0x16;
     pub const OP_JUMP:          u8 = 0x17;
+    pub const OP_LOOP:          u8 = 0x18;
 }
 
 pub use ops::*;
