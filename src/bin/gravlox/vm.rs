@@ -234,6 +234,12 @@ impl GravloxVM {
                         self.jump(distance);
                     }
                 }
+                OP_JUMP => {
+                    #[rustfmt::skip]
+		    let distance = ((self.read_byte() as usize) << 8)
+			         + ((self.read_byte() as usize));
+                    self.jump(distance);
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }

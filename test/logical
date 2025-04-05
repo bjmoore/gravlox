@@ -1,0 +1,3 @@
+if (true or false) print "foo"; // expect: foo
+
+if (true and true) print "foo"; // expect: foo

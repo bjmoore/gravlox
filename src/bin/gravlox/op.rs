@@ -23,6 +23,7 @@ mod ops {
     pub const OP_GET_LOCAL:     u8 = 0x14;
     pub const OP_SET_LOCAL:     u8 = 0x15;
     pub const OP_JUMP_IF_FALSE: u8 = 0x16;
+    pub const OP_JUMP:          u8 = 0x17;
 }
 
 pub use ops::*;

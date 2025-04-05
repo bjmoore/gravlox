@@ -1,0 +1,9 @@
+var a = true;
+if (a) {
+   print "success"; // expect: success
+}
+
+var b = false;
+if (b) {
+   print "fail";
+}

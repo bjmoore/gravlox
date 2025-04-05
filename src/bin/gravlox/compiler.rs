@@ -374,6 +374,27 @@ fn define_variable(parser: &mut Parser, global: usize) {
     parser.emit_bytes(OP_DEFINE_GLOBAL, global as u8);
 }
 
+fn and(parser: &mut Parser, _assignable: bool) {
+    let end_jump = parser.emit_jump(OP_JUMP_IF_FALSE);
+
+    parser.emit_byte(OP_POP);
+    parse_precedence(parser, Precedence::And);
+
+    parser.patch_jump(end_jump);
+}
+
+fn or(parser: &mut Parser, _assignable: bool) {
+    let else_jump = parser.emit_jump(OP_JUMP_IF_FALSE);
+    let end_jump = parser.emit_jump(OP_JUMP);
+
+    parser.patch_jump(else_jump);
+
+    parser.emit_byte(OP_POP);
+    parse_precedence(parser, Precedence::Or);
+
+    parser.patch_jump(end_jump);
+}
+
 fn statement(parser: &mut Parser) {
     if parser.r#match(TokenType::Print) {
         print_statement(parser);
@@ -400,9 +421,21 @@ fn if_statement(parser: &mut Parser) {
     parser.consume(TokenType::RightParen, "Expect ')' after condition.");
 
     let then_jump = parser.emit_jump(OP_JUMP_IF_FALSE);
+
+    parser.emit_byte(OP_POP);
     statement(parser);
 
+    let else_jump = parser.emit_jump(OP_JUMP);
+
     parser.patch_jump(then_jump);
+
+    parser.emit_byte(OP_POP);
+    if parser.r#match(TokenType::Else) {
+	statement(parser);
+    }
+
+    parser.patch_jump(else_jump);
+
 }
 
 fn expression_statement(parser: &mut Parser) {
@@ -562,7 +595,7 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::Identifier   => ParseRule(Some(Box::new(variable)), None,                   Precedence::None),
         TokenType::String       => ParseRule(Some(Box::new(string)),   None,                   Precedence::None),
         TokenType::Number       => ParseRule(Some(Box::new(number)),   None,                   Precedence::None),
-        TokenType::And          => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::And          => ParseRule(None,                     Some(Box::new(and)),    Precedence::And),
         TokenType::Class        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Else         => ParseRule(None,                     None,                   Precedence::None),
         TokenType::False        => ParseRule(Some(Box::new(literal)),  None,                   Precedence::None),
@@ -570,7 +603,7 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::Fun          => ParseRule(None,                     None,                   Precedence::None),
         TokenType::If           => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Nil          => ParseRule(Some(Box::new(literal)),  None,                   Precedence::None),
-        TokenType::Or           => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::Or           => ParseRule(None,                     Some(Box::new(or)),     Precedence::Or),
         TokenType::Print        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Return       => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Super        => ParseRule(None,                     None,                   Precedence::None),
