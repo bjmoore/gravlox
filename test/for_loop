@@ -1,0 +1,7 @@
+for (var a = 0; a < 5; a = a + 1) {
+    print a; // expect: 0
+    	     // expect: 1
+    	     // expect: 2
+    	     // expect: 3
+    	     // expect: 4
+}

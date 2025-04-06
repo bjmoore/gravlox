@@ -421,6 +421,8 @@ fn statement(parser: &mut Parser) {
         if_statement(parser);
     } else if parser.r#match(TokenType::While) {
         while_statement(parser);
+    } else if parser.r#match(TokenType::For) {
+	for_statement(parser);
     } else {
         expression_statement(parser);
     }
@@ -469,6 +471,56 @@ fn while_statement(parser: &mut Parser) {
 
     parser.patch_jump(exit_loop);
     parser.emit_byte(OP_POP);
+}
+
+fn for_statement(parser: &mut Parser) {
+    parser.begin_scope();
+    parser.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
+
+    // initializer
+    if parser.r#match(TokenType::Semicolon) {
+        // No initializer.
+    } else if parser.r#match(TokenType::Var) {
+        var_declaration(parser);
+    } else {
+        expression_statement(parser);
+    }
+
+    let mut loop_start = parser.current_chunk().count();
+    let mut exit_jump = None;
+
+    // condition
+    if !parser.r#match(TokenType::Semicolon) {
+        expression(parser);
+        parser.consume(TokenType::Semicolon, "Expect ';' after for loop condition.");
+
+        exit_jump = Some(parser.emit_jump(OP_JUMP_IF_FALSE));
+        parser.emit_byte(OP_POP);
+    }
+
+    // increment
+    if !parser.r#match(TokenType::RightParen) {
+        let body_jump = parser.emit_jump(OP_JUMP);
+        let increment_start = parser.current_chunk().count();
+        expression(parser);
+        parser.emit_byte(OP_POP);
+        parser.consume(
+            TokenType::RightParen,
+            "Expect ')' after for loop increment.",
+        );
+        parser.emit_loop(loop_start);
+        loop_start = increment_start;
+        parser.patch_jump(body_jump);
+    }
+
+    statement(parser);
+
+    parser.emit_loop(loop_start);
+    if let Some(exit_jump) = exit_jump {
+        parser.patch_jump(exit_jump);
+    }
+    parser.emit_byte(OP_POP);
+    parser.end_scope();
 }
 
 fn expression_statement(parser: &mut Parser) {
