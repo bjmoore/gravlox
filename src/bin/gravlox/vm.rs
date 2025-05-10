@@ -6,13 +6,11 @@ use std::rc::Rc;
 use crate::chunk::Chunk;
 use crate::error::GravloxError;
 use crate::op::*;
-use crate::value::Obj;
 use crate::value::Value;
 
 pub struct GravloxVM {
     ip: *const u8,
     stack: Vec<Value>,
-    heap: Vec<Rc<RefCell<Obj>>>,
     globals: HashMap<String, Value>,
 }
 
@@ -21,7 +19,6 @@ impl GravloxVM {
         Self {
             ip: ptr::null(),
             stack: Vec::new(),
-            heap: Vec::new(),
             globals: HashMap::new(),
         }
     }
@@ -70,20 +67,13 @@ impl GravloxVM {
                             self.pop();
                             self.push(Value::Number(a + b));
                         }
-                        (Value::ObjRef(a), Value::ObjRef(b))
-                            if a.borrow().is_string() && b.borrow().is_string() =>
-                        {
+                        (Value::StringRef(a), Value::StringRef(b)) => {
                             self.pop();
                             self.pop();
                             let obj_a = a.borrow().clone();
                             let obj_b = b.borrow().clone();
-                            match (obj_a, obj_b) {
-                                (Obj::String(a), Obj::String(b)) => {
-                                    let heap_obj = Rc::new(RefCell::new(Obj::String(a + &b)));
-                                    self.heap.push(heap_obj.clone());
-                                    self.push(Value::ObjRef(heap_obj));
-                                }
-                            }
+			    let combined = Rc::new(RefCell::new(obj_a + &obj_b));
+                            self.push(Value::StringRef(combined));
                         }
                         _ => {
                             return self.runtime_error(
@@ -176,9 +166,7 @@ impl GravloxVM {
                 OP_DEFINE_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(obj) => match obj.borrow().clone() {
-                            Obj::String(s) => s,
-                        },
+			Value::StringRef(s) => s.borrow().clone(),
                         _ => unreachable!(),
                     };
                     let value = self.peek(0);
@@ -189,9 +177,7 @@ impl GravloxVM {
                 OP_GET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(obj) => match obj.borrow().clone() {
-                            Obj::String(s) => s,
-                        },
+                        Value::StringRef(obj) => obj.borrow().clone(),
                         _ => unreachable!(),
                     };
                     let value = match self.globals.get(&name) {
@@ -206,9 +192,7 @@ impl GravloxVM {
                 OP_SET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-                        Value::ObjRef(obj) => match obj.borrow().clone() {
-                            Obj::String(s) => s,
-                        },
+			Value::StringRef(obj) => obj.borrow().clone(),
                         _ => unreachable!(),
                     };
                     if self.globals.contains_key(&name) {

@@ -1,13 +1,15 @@
 use std::cell::RefCell;
 use std::fmt::Display;
 use std::rc::Rc;
+use crate::chunk::Chunk;
 
 #[derive(Debug, Clone)]
 pub enum Value {
     Number(f64),
     Nil,
     Bool(bool),
-    ObjRef(Rc<RefCell<Obj>>),
+    StringRef(Rc<RefCell<String>>),
+    FunctionRef(Rc<RefCell<Function>>),
 }
 
 impl Display for Value {
@@ -16,7 +18,8 @@ impl Display for Value {
             Value::Number(v) => write!(f, "{}", v),
             Value::Nil => write!(f, "nil"),
             Value::Bool(v) => write!(f, "{}", v),
-            Value::ObjRef(v) => write!(f, "{}", v.borrow()),
+            Value::StringRef(v) => write!(f, "{}", v.borrow()),
+	    Value::FunctionRef(v) => write!(f, "{}", v.borrow().name),
         }
     }
 }
@@ -27,7 +30,7 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Nil => false,
             Value::Number(n) => *n != 0f64,
-            Value::ObjRef(_) => true,
+	    _ => true
         }
     }
 
@@ -36,28 +39,19 @@ impl Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::Number(a), Value::Number(b)) => a == b,
+	    (Value::StringRef(a), Value::StringRef(b)) => {
+		*a == *b
+	    },
             _ => false, // Different types are unequal
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Obj {
-    String(String),
-}
-
-impl Display for Obj {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Obj::String(s) => write!(f, "{}", s),
-        }
-    }
-}
-
-impl Obj {
-    pub fn is_string(&self) -> bool {
-        matches!(self, Obj::String(_))
-    }
+#[derive(Debug)]
+pub struct Function {
+    arity: usize,
+    chunk: Chunk,
+    name: String,
 }
 
 #[cfg(test)]

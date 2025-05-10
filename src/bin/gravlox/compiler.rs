@@ -7,7 +7,6 @@ use crate::lexer::Scanner;
 use crate::op::*;
 use crate::token::Token;
 use crate::token::TokenType;
-use crate::value::Obj;
 use crate::value::Value;
 
 pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
@@ -18,7 +17,6 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
         had_error: false,
         panic_mode: false,
         compiling_chunk: chunk,
-        heap: Vec::new(),
         locals: [Local::default(); MAX_LOCALS],
         local_count: 0,
         scope_depth: 0,
@@ -49,7 +47,6 @@ struct Parser<'a> {
     had_error: bool,
     panic_mode: bool,
     compiling_chunk: &'a mut Chunk,
-    heap: Vec<Rc<RefCell<Obj>>>,
     locals: [Local; MAX_LOCALS],
     local_count: usize,
     scope_depth: usize,
@@ -224,10 +221,6 @@ impl<'a> Parser<'a> {
         self.had_error = true;
     }
 
-    fn heap_add(&mut self, obj: Rc<RefCell<Obj>>) {
-        self.heap.push(obj);
-    }
-
     fn lexeme(&self) -> &str {
         self.lexer.lexeme(self.previous)
     }
@@ -361,12 +354,11 @@ fn declare_variable(parser: &mut Parser) {
 
 fn identifier_constant(parser: &mut Parser) -> usize {
     let name = parser.lexeme();
-    let heap_obj = Rc::new(RefCell::new(Obj::String(name.to_owned())));
-    parser.heap_add(heap_obj.clone());
+    let heap_obj = Rc::new(RefCell::new(name.to_owned()));
     let line = parser.previous.line;
     parser
         .current_chunk()
-        .add_constant(Value::ObjRef(heap_obj), line)
+        .add_constant(Value::StringRef(heap_obj), line)
         .unwrap_or_else(|e| {
             parser.error_at(parser.previous, e);
             0
@@ -597,9 +589,8 @@ fn literal(parser: &mut Parser, _assignable: bool) {
 
 fn string(parser: &mut Parser, _assignable: bool) {
     let str_value = parser.lexer.string_lexeme(parser.previous);
-    let heap_obj = Rc::new(RefCell::new(Obj::String(str_value.to_owned())));
-    parser.heap_add(heap_obj.clone());
-    parser.emit_constant(Value::ObjRef(heap_obj));
+    let heap_obj = Rc::new(RefCell::new(str_value.to_owned()));
+    parser.emit_constant(Value::StringRef(heap_obj));
 }
 
 fn variable(parser: &mut Parser, assignable: bool) {
