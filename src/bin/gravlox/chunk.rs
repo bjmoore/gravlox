@@ -30,6 +30,16 @@ pub struct Chunk {
     lineinfo: Vec<(u32, u32)>,
 }
 
+impl std::fmt::Debug for Chunk {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt.debug_struct("Chunk")
+            .field("name", &self.name)
+            .field("code", &self.code)
+            .field("constants", &self.constants)
+            .finish()
+    }
+}
+
 impl Chunk {
     pub fn new(name: &str) -> Self {
         Self {
