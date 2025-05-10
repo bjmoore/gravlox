@@ -1,4 +1,4 @@
-Current reading: https://craftinginterpreters.com/jumping-back-and-forth.html
+Current reading: https://craftinginterpreters.com/calls-and-functions.html
 
 Bonus TODOs:
 
