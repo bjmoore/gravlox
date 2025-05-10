@@ -54,6 +54,16 @@ pub struct Function {
     name: String,
 }
 
+pub fn new_function(name: &str) -> Value {
+    let func = Function {
+	arity: 0,
+	chunk: Chunk::new(name),
+	name: String::from(name),
+    };
+
+    Value::FunctionRef(Rc::new(RefCell::new(func)))
+}
+
 #[cfg(test)]
 mod tests {
 
