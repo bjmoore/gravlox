@@ -240,12 +240,12 @@ impl GravloxVM {
 			         + ((self.read_byte() as usize));
                     self.jump(distance);
                 }
-		OP_LOOP => {
+                OP_LOOP => {
                     #[rustfmt::skip]
 		    let distance = ((self.read_byte() as usize) << 8)
 			         + ((self.read_byte() as usize));
-		    self.jump_back(distance);
-		}
+                    self.jump_back(distance);
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }
@@ -275,9 +275,9 @@ impl GravloxVM {
     }
 
     fn jump_back(&mut self, distance: usize) {
-	unsafe {
-	    self.ip = self.ip.sub(distance);
-	}
+        unsafe {
+            self.ip = self.ip.sub(distance);
+        }
     }
 
     fn pop(&mut self) -> Value {

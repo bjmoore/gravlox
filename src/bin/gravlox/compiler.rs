@@ -422,7 +422,7 @@ fn statement(parser: &mut Parser) {
     } else if parser.r#match(TokenType::While) {
         while_statement(parser);
     } else if parser.r#match(TokenType::For) {
-	for_statement(parser);
+        for_statement(parser);
     } else {
         expression_statement(parser);
     }
