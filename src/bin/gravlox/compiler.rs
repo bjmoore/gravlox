@@ -7,6 +7,7 @@ use crate::lexer::Scanner;
 use crate::op::*;
 use crate::token::Token;
 use crate::token::TokenType;
+use crate::value::FunctionPtr;
 use crate::value::Value;
 
 pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
@@ -16,7 +17,8 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
         lexer: Scanner::new(source),
         had_error: false,
         panic_mode: false,
-        compiling_chunk: chunk,
+        function: crate::value::new_function("main"),
+        function_type: FunctionType::Script,
         locals: [Local::default(); MAX_LOCALS],
         local_count: 0,
         scope_depth: 0,
@@ -40,19 +42,25 @@ struct Local {
     depth: usize,
 }
 
-struct Parser<'a> {
+enum FunctionType {
+    Function,
+    Script,
+}
+
+struct Parser {
     current: Token,
     previous: Token,
     lexer: Scanner,
     had_error: bool,
     panic_mode: bool,
-    compiling_chunk: &'a mut Chunk,
+    function: Value,
+    function_type: FunctionType,
     locals: [Local; MAX_LOCALS],
     local_count: usize,
     scope_depth: usize,
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     fn advance(&mut self) {
         self.previous = self.current;
         loop {
@@ -122,8 +130,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn current_chunk(&mut self) -> &mut Chunk {
-        self.compiling_chunk
+    fn current_chunk(&mut self) -> FunctionPtr {
+        // Return a (mutable!) object that implements add_code, add_constant, etc
+        // clone the rc:: into a new container type (FunctionRef?)
+        // implement pass-thru methods on FunctionRef
+        match &self.function {
+            Value::FunctionRef(f) => FunctionPtr::new(f),
+            _ => unreachable!("function value should always have type FunctionRef"),
+        }
     }
 
     fn emit_byte(&mut self, byte: u8) {

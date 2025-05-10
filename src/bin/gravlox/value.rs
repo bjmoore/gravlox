@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fmt::Display;
 use std::rc::Rc;
 use crate::chunk::Chunk;
+use crate::error::GravloxError;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -62,6 +63,40 @@ pub fn new_function(name: &str) -> Value {
     };
 
     Value::FunctionRef(Rc::new(RefCell::new(func)))
+}
+
+pub struct FunctionPtr {
+    func: Rc<RefCell<Function>>
+}
+
+impl FunctionPtr {
+    pub fn new(func: &Rc<RefCell<Function>>) -> Self {
+	Self {
+	    func: func.clone()
+	}
+    }
+
+    pub fn add_code(&mut self, byte: u8, line_number: u32) {
+	self.func.borrow_mut().chunk.add_code(byte, line_number);
+    }
+
+    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<usize, GravloxError> {
+	self.func.borrow_mut().chunk.add_constant(value, line_number)
+    }
+
+    pub fn count(&self) -> usize {
+        self.func.borrow().chunk.count()
+    }
+
+    pub fn patch_byte(&mut self, offset: usize, byte: u8) {
+	self.func.borrow_mut().chunk.patch_byte(offset, byte)
+    }
+}
+
+impl Display for FunctionPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+	write!(f, "{}", self.func.borrow().name)
+    }
 }
 
 #[cfg(test)]
