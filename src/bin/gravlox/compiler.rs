@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::chunk::Chunk;
 use crate::error::GravloxError;
 use crate::lexer::Scanner;
 use crate::op::*;
@@ -10,7 +9,7 @@ use crate::token::TokenType;
 use crate::value::FunctionPtr;
 use crate::value::Value;
 
-pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
+pub fn compile(source: String, debug: bool) -> Option<Value> {
     let mut parser = Parser {
         current: Token::default(),
         previous: Token::default(),
@@ -28,10 +27,14 @@ pub fn compile(source: String, chunk: &mut Chunk, debug: bool) -> bool {
     while !parser.r#match(TokenType::Eof) {
         declaration(&mut parser);
     }
-    parser.end_compiler(debug);
+    let func = parser.end_compiler(debug);
 
-    // Return heap objects here
-    !parser.had_error
+    // Return an error here
+    if !parser.had_error {
+	Some(func)
+    } else {
+	None
+    }
 }
 
 const MAX_LOCALS: usize = 256;
@@ -123,11 +126,15 @@ impl Parser {
         }
     }
 
-    fn end_compiler(&mut self, debug: bool) {
+    fn end_compiler(&mut self, debug: bool) -> Value {
         self.emit_return();
+	let func = self.function.clone();
+	
         if !self.had_error && debug {
             print!("{}", self.current_chunk());
         }
+
+	func
     }
 
     fn current_chunk(&mut self) -> FunctionPtr {

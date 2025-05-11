@@ -6,12 +6,15 @@ use std::rc::Rc;
 use crate::chunk::Chunk;
 use crate::error::GravloxError;
 use crate::op::*;
+use crate::value::FunctionPtr;
 use crate::value::Value;
 
 pub struct GravloxVM {
     ip: *const u8,
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
+    // The book uses a fixed-size array of CallFrames, but I'm just going to use a vec for now to keep it simple.
+    frames: Vec<CallFrame>,
 }
 
 impl GravloxVM {
@@ -20,6 +23,7 @@ impl GravloxVM {
             ip: ptr::null(),
             stack: Vec::new(),
             globals: HashMap::new(),
+            frames: Vec::new(),
         }
     }
 
@@ -72,7 +76,7 @@ impl GravloxVM {
                             self.pop();
                             let obj_a = a.borrow().clone();
                             let obj_b = b.borrow().clone();
-			    let combined = Rc::new(RefCell::new(obj_a + &obj_b));
+                            let combined = Rc::new(RefCell::new(obj_a + &obj_b));
                             self.push(Value::StringRef(combined));
                         }
                         _ => {
@@ -166,7 +170,7 @@ impl GravloxVM {
                 OP_DEFINE_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-			Value::StringRef(s) => s.borrow().clone(),
+                        Value::StringRef(s) => s.borrow().clone(),
                         _ => unreachable!(),
                     };
                     let value = self.peek(0);
@@ -192,7 +196,7 @@ impl GravloxVM {
                 OP_SET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
                     let name = match chunk.get_constant(const_idx) {
-			Value::StringRef(obj) => obj.borrow().clone(),
+                        Value::StringRef(obj) => obj.borrow().clone(),
                         _ => unreachable!(),
                     };
                     if self.globals.contains_key(&name) {
@@ -284,4 +288,10 @@ impl GravloxVM {
             line, message
         )))
     }
+}
+
+struct CallFrame {
+    func: FunctionPtr,
+    ip: *const u8,
+    slots: Vec<Value>,
 }
