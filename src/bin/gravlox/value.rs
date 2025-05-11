@@ -1,8 +1,10 @@
+use crate::chunk::Chunk;
+use crate::chunk::ChunkPtr;
+use crate::error::GravloxError;
 use std::cell::RefCell;
+use std::cell::RefMut;
 use std::fmt::Display;
 use std::rc::Rc;
-use crate::chunk::Chunk;
-use crate::error::GravloxError;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -20,7 +22,7 @@ impl Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Bool(v) => write!(f, "{}", v),
             Value::StringRef(v) => write!(f, "{}", v.borrow()),
-	    Value::FunctionRef(v) => write!(f, "{}", v.borrow().name),
+            Value::FunctionRef(v) => write!(f, "{}", v.borrow().name),
         }
     }
 }
@@ -31,7 +33,7 @@ impl Value {
             Value::Bool(b) => *b,
             Value::Nil => false,
             Value::Number(n) => *n != 0f64,
-	    _ => true
+            _ => true,
         }
     }
 
@@ -40,9 +42,7 @@ impl Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Nil, Value::Nil) => true,
             (Value::Number(a), Value::Number(b)) => a == b,
-	    (Value::StringRef(a), Value::StringRef(b)) => {
-		*a == *b
-	    },
+            (Value::StringRef(a), Value::StringRef(b)) => *a == *b,
             _ => false, // Different types are unequal
         }
     }
@@ -51,53 +51,26 @@ impl Value {
 #[derive(Debug)]
 pub struct Function {
     arity: usize,
-    pub chunk: Chunk,
+    chunk: ChunkPtr,
     name: String,
 }
 
+pub type FunctionPtr = Rc<RefCell<Function>>;
+
+impl Function {
+    pub fn chunk(&self) -> ChunkPtr {
+        self.chunk.clone()
+    }
+}
+
 pub fn new_function(name: &str) -> FunctionPtr {
-    let func = Function {
-	arity: 0,
-	chunk: Chunk::new(name),
-	name: String::from(name),
+    let function = Function {
+        arity: 0,
+        chunk: Rc::new(RefCell::new(Chunk::new(name))),
+        name: String::from(name),
     };
 
-    FunctionPtr{ func: Rc::new(RefCell::new(func)) }
-}
-
-#[derive(Clone)]
-pub struct FunctionPtr {
-    pub func: Rc<RefCell<Function>>
-}
-
-impl FunctionPtr {
-    pub fn new(func: &Rc<RefCell<Function>>) -> Self {
-	Self {
-	    func: func.clone()
-	}
-    }
-
-    pub fn add_code(&mut self, byte: u8, line_number: u32) {
-	self.func.borrow_mut().chunk.add_code(byte, line_number);
-    }
-
-    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<usize, GravloxError> {
-	self.func.borrow_mut().chunk.add_constant(value, line_number)
-    }
-
-    pub fn count(&self) -> usize {
-        self.func.borrow().chunk.count()
-    }
-
-    pub fn patch_byte(&mut self, offset: usize, byte: u8) {
-	self.func.borrow_mut().chunk.patch_byte(offset, byte)
-    }
-}
-
-impl Display for FunctionPtr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-	write!(f, "{}", self.func.borrow().name)
-    }
+    Rc::new(RefCell::new(function))
 }
 
 #[cfg(test)]

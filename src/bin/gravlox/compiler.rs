@@ -1,6 +1,9 @@
 use std::cell::RefCell;
+use std::cell::RefMut;
 use std::rc::Rc;
 
+use crate::chunk::Chunk;
+use crate::chunk::ChunkPtr;
 use crate::error::GravloxError;
 use crate::lexer::Scanner;
 use crate::op::*;
@@ -31,9 +34,9 @@ pub fn compile(source: String, debug: bool) -> Option<FunctionPtr> {
 
     // Return an error here
     if !parser.had_error {
-	Some(func)
+        Some(func)
     } else {
-	None
+        None
     }
 }
 
@@ -128,31 +131,37 @@ impl Parser {
 
     fn end_compiler(&mut self, debug: bool) -> FunctionPtr {
         self.emit_return();
-	let func = self.function.clone();
-	
+        let func = self.function.clone();
+
         if !self.had_error && debug {
-            print!("{}", self.current_chunk());
+            print!("{}", self.current_chunk().borrow());
         }
 
-	func
+        func
     }
 
-    fn current_chunk(&self) -> FunctionPtr {
+    fn current_chunk(&self) -> ChunkPtr {
         // Return a (mutable!) object that implements add_code, add_constant, etc
         // clone the rc:: into a new container type (FunctionRef?)
         // implement pass-thru methods on FunctionRef
-	self.function.clone()
+        self.function.borrow().chunk()
     }
 
     fn emit_byte(&mut self, byte: u8) {
         let line_number = self.previous.line;
-        self.current_chunk().add_code(byte, line_number);
+        self.current_chunk()
+            .borrow_mut()
+            .add_code(byte, line_number);
     }
 
     fn emit_bytes(&mut self, byte1: u8, byte2: u8) {
         let line_number = self.previous.line;
-        self.current_chunk().add_code(byte1, line_number);
-        self.current_chunk().add_code(byte2, line_number);
+        self.current_chunk()
+            .borrow_mut()
+            .add_code(byte1, line_number);
+        self.current_chunk()
+            .borrow_mut()
+            .add_code(byte2, line_number);
     }
 
     fn emit_return(&mut self) {
@@ -163,6 +172,7 @@ impl Parser {
         let line_number = self.previous.line;
         let const_idx = self
             .current_chunk()
+            .borrow_mut()
             .add_constant(value, line_number)
             .unwrap_or_else(|e| {
                 self.error_at(self.previous, e);
@@ -170,15 +180,25 @@ impl Parser {
             });
 
         if const_idx < 256 {
-            self.current_chunk().add_code(OP_CONSTANT, line_number);
-            self.current_chunk().add_code(const_idx as u8, line_number);
-        } else {
-            self.current_chunk().add_code(OP_CONSTANT_LONG, line_number);
             self.current_chunk()
+                .borrow_mut()
+                .add_code(OP_CONSTANT, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(const_idx as u8, line_number);
+        } else {
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(OP_CONSTANT_LONG, line_number);
+            self.current_chunk()
+                .borrow_mut()
                 .add_code((const_idx >> 16) as u8, line_number);
             self.current_chunk()
+                .borrow_mut()
                 .add_code((const_idx >> 8) as u8, line_number);
-            self.current_chunk().add_code(const_idx as u8, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(const_idx as u8, line_number);
         }
 
         const_idx
@@ -189,11 +209,11 @@ impl Parser {
         self.emit_byte(instruction);
         self.emit_byte(0xFF);
         self.emit_byte(0xFF);
-        self.current_chunk().count() - 2
+        self.current_chunk().borrow().count() - 2
     }
 
     fn patch_jump(&mut self, offset: usize) {
-        let jump = self.current_chunk().count() - offset - 2;
+        let jump = self.current_chunk().borrow().count() - offset - 2;
 
         if jump > u16::MAX.into() {
             self.error_at(
@@ -202,14 +222,18 @@ impl Parser {
             );
         }
 
-        self.current_chunk().patch_byte(offset, (jump >> 8) as u8);
-        self.current_chunk().patch_byte(offset + 1, jump as u8);
+        self.current_chunk()
+            .borrow_mut()
+            .patch_byte(offset, (jump >> 8) as u8);
+        self.current_chunk()
+            .borrow_mut()
+            .patch_byte(offset + 1, jump as u8);
     }
 
     fn emit_loop(&mut self, location: usize) {
         self.emit_byte(OP_LOOP);
 
-        let offset = self.current_chunk().count() - location + 2; // +2 because while processing this jump, we will advance ip by 2
+        let offset = self.current_chunk().borrow().count() - location + 2; // +2 because while processing this jump, we will advance ip by 2
         if offset > u16::MAX.into() {
             self.error_at(
                 self.previous,
@@ -376,6 +400,7 @@ fn identifier_constant(parser: &mut Parser) -> usize {
     let line = parser.previous.line;
     parser
         .current_chunk()
+        .borrow_mut()
         .add_constant(Value::StringRef(heap_obj), line)
         .unwrap_or_else(|e| {
             parser.error_at(parser.previous, e);
@@ -467,7 +492,7 @@ fn if_statement(parser: &mut Parser) {
 }
 
 fn while_statement(parser: &mut Parser) {
-    let loop_start = parser.current_chunk().count();
+    let loop_start = parser.current_chunk().borrow().count();
 
     parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
     expression(parser);
@@ -496,7 +521,7 @@ fn for_statement(parser: &mut Parser) {
         expression_statement(parser);
     }
 
-    let mut loop_start = parser.current_chunk().count();
+    let mut loop_start = parser.current_chunk().borrow().count();
     let mut exit_jump = None;
 
     // condition
@@ -511,7 +536,7 @@ fn for_statement(parser: &mut Parser) {
     // increment
     if !parser.r#match(TokenType::RightParen) {
         let body_jump = parser.emit_jump(OP_JUMP);
-        let increment_start = parser.current_chunk().count();
+        let increment_start = parser.current_chunk().borrow().count();
         expression(parser);
         parser.emit_byte(OP_POP);
         parser.consume(

@@ -257,10 +257,10 @@ impl GravloxVM {
     fn read_constant(&self, const_idx: usize) -> Value {
         let current_frame = self.current_frame();
         let ret = current_frame
-            .func
-            .func
+            .func()
             .borrow()
-            .chunk
+            .chunk()
+            .borrow()
             .get_constant(const_idx);
         ret
     }
@@ -293,7 +293,13 @@ impl GravloxVM {
 
     fn runtime_error(&self, message: &str) -> Result<(), GravloxError> {
         let ip = self.current_frame().ip;
-        let line = self.current_frame().func.func.borrow().chunk.get_line(ip);
+        let line = self
+            .current_frame()
+            .func()
+            .borrow()
+            .chunk()
+            .borrow()
+            .get_line(ip);
 
         Err(GravloxError::RuntimeError(format!(
             "[line {}] Error: {}",
@@ -304,7 +310,7 @@ impl GravloxVM {
     fn new_frame_ptr(&self, func: FunctionPtr) -> CallFramePtr {
         Rc::new(RefCell::new(CallFrame {
             func: func.clone(),
-            ip: func.func.borrow().chunk.get_ip(),
+            ip: func.borrow().chunk().borrow().get_ip(),
             stack_offset: self.stack.len(),
         }))
     }
@@ -322,9 +328,15 @@ impl GravloxVM {
 }
 
 struct CallFrame {
-    pub func: FunctionPtr,
+    func: FunctionPtr,
     ip: *const u8,
     stack_offset: usize,
 }
 
 type CallFramePtr = Rc<RefCell<CallFrame>>;
+
+impl CallFrame {
+    pub fn func(&self) -> FunctionPtr {
+        self.func.clone()
+    }
+}

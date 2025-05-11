@@ -1,6 +1,8 @@
 use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::rc::Rc;
 
 use crate::error::GravloxError;
 use crate::op::*;
@@ -29,6 +31,8 @@ pub struct Chunk {
     constants: Vec<Value>,
     lineinfo: Vec<(u32, u32)>,
 }
+
+pub type ChunkPtr = Rc<RefCell<Chunk>>;
 
 impl std::fmt::Debug for Chunk {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

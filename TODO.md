@@ -1,4 +1,4 @@
-Current reading: https://craftinginterpreters.com/calls-and-functions.html
+Current reading: https://craftinginterpreters.com/calls-and-functions.html#function-declarations
 
 Bonus TODOs:
 
@@ -8,3 +8,4 @@ Bonus TODOs:
 * Can I optimize the storage of global constants? Currently a new constants entry is created every time the global is referenced.
 * Add constants. New keyword 'const'
 * Optimize local resolution. Currently it does a linear scan through the Locals array.
+* Handling the CallFramePtr->FunctionPtr->ChunkPtr relationship is kind of ugly. Is there a better way to do this?
