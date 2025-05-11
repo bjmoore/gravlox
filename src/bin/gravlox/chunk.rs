@@ -79,8 +79,8 @@ impl Chunk {
         Ok(const_idx)
     }
 
-    pub fn get_constant(&self, const_idx: usize) -> &Value {
-        &self.constants[const_idx]
+    pub fn get_constant(&self, const_idx: usize) -> Value {
+        self.constants[const_idx].clone()
     }
 
     pub fn get_line(&self, ip: *const u8) -> u32 {

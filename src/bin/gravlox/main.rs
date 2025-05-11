@@ -38,11 +38,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn run_script(filename: &str, debug: bool) -> Result<(), Box<dyn Error>> {
     let mut vm = GravloxVM::new();
-    let script = String::from_utf8(fs::read(filename)?)?;
-    let compile_ok = compile(script, debug);
+    let source = String::from_utf8(fs::read(filename)?)?;
+    let script = compile(source, debug);
 
-    if compile_ok {
-        vm.interpret(&chunk)?;
+    if let Some(script) = script {
+	vm.interpret(script)?;
     }
 
     Ok(())
@@ -56,9 +56,9 @@ fn repl(debug: bool) -> Result<(), Box<dyn Error>> {
         io::stdout().flush()?;
         io::stdin().read_line(&mut buf)?;
 
-        let compile_ok = compile(buf.clone(), debug);
-        if compile_ok {
-            vm.interpret(&chunk)?;
-        }
+        let script = compile(buf.clone(), debug);
+	if let Some(script) = script {
+	    vm.interpret(script)?;
+	}
     }
 }

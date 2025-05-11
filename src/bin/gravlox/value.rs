@@ -51,22 +51,23 @@ impl Value {
 #[derive(Debug)]
 pub struct Function {
     arity: usize,
-    chunk: Chunk,
+    pub chunk: Chunk,
     name: String,
 }
 
-pub fn new_function(name: &str) -> Value {
+pub fn new_function(name: &str) -> FunctionPtr {
     let func = Function {
 	arity: 0,
 	chunk: Chunk::new(name),
 	name: String::from(name),
     };
 
-    Value::FunctionRef(Rc::new(RefCell::new(func)))
+    FunctionPtr{ func: Rc::new(RefCell::new(func)) }
 }
 
+#[derive(Clone)]
 pub struct FunctionPtr {
-    func: Rc<RefCell<Function>>
+    pub func: Rc<RefCell<Function>>
 }
 
 impl FunctionPtr {

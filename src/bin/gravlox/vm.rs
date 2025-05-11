@@ -1,38 +1,40 @@
+use std::cell::Ref;
 use std::cell::RefCell;
+use std::cell::RefMut;
 use std::collections::HashMap;
-use std::ptr;
 use std::rc::Rc;
 
-use crate::chunk::Chunk;
 use crate::error::GravloxError;
 use crate::op::*;
 use crate::value::FunctionPtr;
 use crate::value::Value;
 
+const NULL_FRAME_MSG: &'static str = "Current frame should not be None";
+
 pub struct GravloxVM {
-    ip: *const u8,
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
     // The book uses a fixed-size array of CallFrames, but I'm just going to use a vec for now to keep it simple.
-    frames: Vec<CallFrame>,
+    frames: Vec<CallFramePtr>,
+    current_frame: Option<CallFramePtr>,
 }
 
 impl GravloxVM {
     pub fn new() -> Self {
         Self {
-            ip: ptr::null(),
             stack: Vec::new(),
             globals: HashMap::new(),
             frames: Vec::new(),
+            current_frame: None,
         }
     }
 
-    pub fn interpret(&mut self, chunk: &Chunk) -> Result<(), GravloxError> {
-        self.ip = chunk.get_ip();
-        self.run(chunk)
+    pub fn interpret(&mut self, func: FunctionPtr) -> Result<(), GravloxError> {
+        self.current_frame = Some(self.new_frame_ptr(func));
+        self.run()
     }
 
-    fn run(&mut self, chunk: &Chunk) -> Result<(), GravloxError> {
+    fn run(&mut self) -> Result<(), GravloxError> {
         loop {
             let opcode = self.read_byte();
 
@@ -42,14 +44,14 @@ impl GravloxVM {
                 }
                 OP_CONSTANT => {
                     let const_idx = self.read_byte() as usize;
-                    self.push(chunk.get_constant(const_idx).clone());
+                    self.push(self.read_constant(const_idx));
                 }
                 OP_CONSTANT_LONG => {
                     #[rustfmt::skip]
                     let const_idx = (self.read_byte() as usize) << 16
                                   + (self.read_byte() as usize) << 8
                                   + (self.read_byte() as usize);
-                    self.push(chunk.get_constant(const_idx).clone());
+                    self.push(self.read_constant(const_idx));
                 }
                 OP_NEGATE => {
                     let value = self.peek(0);
@@ -57,8 +59,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(-value));
                     } else {
-                        println!("[line {}]: Error: {}", chunk.get_line(self.ip), "asdf");
-                        return self.runtime_error("Cannot negate non-number value", chunk);
+                        return self.runtime_error("Cannot negate non-number value");
                     }
                 }
                 OP_ADD => {
@@ -80,10 +81,8 @@ impl GravloxVM {
                             self.push(Value::StringRef(combined));
                         }
                         _ => {
-                            return self.runtime_error(
-                                "+ operands must be both numbers or both strings",
-                                chunk,
-                            );
+                            return self
+                                .runtime_error("+ operands must be both numbers or both strings");
                         }
                     }
                 }
@@ -95,7 +94,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a - b));
                     } else {
-                        return self.runtime_error("- operands must be both numbers", chunk);
+                        return self.runtime_error("- operands must be both numbers");
                     }
                 }
                 OP_MULTIPLY => {
@@ -106,7 +105,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a * b));
                     } else {
-                        return self.runtime_error("* operands must be both numbers", chunk);
+                        return self.runtime_error("* operands must be both numbers");
                     }
                 }
                 OP_DIVIDE => {
@@ -117,7 +116,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a / b));
                     } else {
-                        return self.runtime_error("/ operands must be both numbers", chunk);
+                        return self.runtime_error("/ operands must be both numbers");
                     }
                 }
                 OP_NIL => {
@@ -146,7 +145,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Bool(a > b));
                     } else {
-                        return self.runtime_error("< operands must be both numbers", chunk);
+                        return self.runtime_error("< operands must be both numbers");
                     }
                 }
                 OP_LESS => {
@@ -157,7 +156,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Bool(a < b));
                     } else {
-                        return self.runtime_error("> operands must be both numbers", chunk);
+                        return self.runtime_error("> operands must be both numbers");
                     }
                 }
                 OP_POP => {
@@ -169,7 +168,7 @@ impl GravloxVM {
                 }
                 OP_DEFINE_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
-                    let name = match chunk.get_constant(const_idx) {
+                    let name = match self.read_constant(const_idx) {
                         Value::StringRef(s) => s.borrow().clone(),
                         _ => unreachable!(),
                     };
@@ -180,14 +179,14 @@ impl GravloxVM {
                 }
                 OP_GET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
-                    let name = match chunk.get_constant(const_idx) {
+                    let name = match self.read_constant(const_idx) {
                         Value::StringRef(obj) => obj.borrow().clone(),
                         _ => unreachable!(),
                     };
                     let value = match self.globals.get(&name) {
                         Some(value) => value.clone(),
                         None => {
-                            return self.runtime_error("Undefined variable", chunk);
+                            return self.runtime_error("Undefined variable");
                         }
                     };
 
@@ -195,22 +194,22 @@ impl GravloxVM {
                 }
                 OP_SET_GLOBAL => {
                     let const_idx = self.read_byte() as usize;
-                    let name = match chunk.get_constant(const_idx) {
+                    let name = match self.read_constant(const_idx) {
                         Value::StringRef(obj) => obj.borrow().clone(),
                         _ => unreachable!(),
                     };
                     if self.globals.contains_key(&name) {
                         self.globals.insert(name, self.peek(0));
                     } else {
-                        return self.runtime_error("Undefined variable", chunk);
+                        return self.runtime_error("Undefined variable");
                     }
                 }
                 OP_GET_LOCAL => {
-                    let slot = self.read_byte() as usize;
+                    let slot = self.read_byte() as usize + self.current_frame().stack_offset;
                     self.push(self.stack[slot].clone());
                 }
                 OP_SET_LOCAL => {
-                    let slot = self.read_byte() as usize;
+                    let slot = self.read_byte() as usize + self.current_frame().stack_offset;
                     self.stack[slot] = self.peek(0).clone();
                 }
                 OP_JUMP_IF_FALSE => {
@@ -242,29 +241,41 @@ impl GravloxVM {
     #[allow(dead_code)]
     // Utility method for debugging.
     fn peek_byte(&mut self) -> u8 {
-        unsafe {
-            let ret = *self.ip;
-            ret
-        }
+        let current_frame = self.current_frame();
+        unsafe { *current_frame.ip }
     }
 
     fn read_byte(&mut self) -> u8 {
+        let mut current_frame = self.current_frame_mut();
         unsafe {
-            let ret = *self.ip;
-            self.ip = self.ip.add(1);
+            let ret = *current_frame.ip;
+            current_frame.ip = current_frame.ip.add(1);
             ret
         }
     }
 
+    fn read_constant(&self, const_idx: usize) -> Value {
+        let current_frame = self.current_frame();
+        let ret = current_frame
+            .func
+            .func
+            .borrow()
+            .chunk
+            .get_constant(const_idx);
+        ret
+    }
+
     fn jump(&mut self, distance: usize) {
+        let mut current_frame = self.current_frame_mut();
         unsafe {
-            self.ip = self.ip.add(distance);
+            current_frame.ip = current_frame.ip.add(distance);
         }
     }
 
     fn jump_back(&mut self, distance: usize) {
+        let mut current_frame = self.current_frame_mut();
         unsafe {
-            self.ip = self.ip.sub(distance);
+            current_frame.ip = current_frame.ip.sub(distance);
         }
     }
 
@@ -280,18 +291,40 @@ impl GravloxVM {
         self.stack[self.stack.len() - depth - 1].clone()
     }
 
-    fn runtime_error(&self, message: &str, chunk: &Chunk) -> Result<(), GravloxError> {
-        let line = chunk.get_line(self.ip);
+    fn runtime_error(&self, message: &str) -> Result<(), GravloxError> {
+        let ip = self.current_frame().ip;
+        let line = self.current_frame().func.func.borrow().chunk.get_line(ip);
 
         Err(GravloxError::RuntimeError(format!(
             "[line {}] Error: {}",
             line, message
         )))
     }
+
+    fn new_frame_ptr(&self, func: FunctionPtr) -> CallFramePtr {
+        Rc::new(RefCell::new(CallFrame {
+            func: func.clone(),
+            ip: func.func.borrow().chunk.get_ip(),
+            stack_offset: self.stack.len(),
+        }))
+    }
+
+    fn current_frame(&self) -> Ref<CallFrame> {
+        self.current_frame.as_ref().expect(NULL_FRAME_MSG).borrow()
+    }
+
+    fn current_frame_mut(&self) -> RefMut<CallFrame> {
+        self.current_frame
+            .as_ref()
+            .expect(NULL_FRAME_MSG)
+            .borrow_mut()
+    }
 }
 
 struct CallFrame {
-    func: FunctionPtr,
+    pub func: FunctionPtr,
     ip: *const u8,
-    slots: Vec<Value>,
+    stack_offset: usize,
 }
+
+type CallFramePtr = Rc<RefCell<CallFrame>>;

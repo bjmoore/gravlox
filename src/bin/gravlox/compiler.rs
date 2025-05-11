@@ -9,7 +9,7 @@ use crate::token::TokenType;
 use crate::value::FunctionPtr;
 use crate::value::Value;
 
-pub fn compile(source: String, debug: bool) -> Option<Value> {
+pub fn compile(source: String, debug: bool) -> Option<FunctionPtr> {
     let mut parser = Parser {
         current: Token::default(),
         previous: Token::default(),
@@ -56,7 +56,7 @@ struct Parser {
     lexer: Scanner,
     had_error: bool,
     panic_mode: bool,
-    function: Value,
+    function: FunctionPtr,
     function_type: FunctionType,
     locals: [Local; MAX_LOCALS],
     local_count: usize,
@@ -126,7 +126,7 @@ impl Parser {
         }
     }
 
-    fn end_compiler(&mut self, debug: bool) -> Value {
+    fn end_compiler(&mut self, debug: bool) -> FunctionPtr {
         self.emit_return();
 	let func = self.function.clone();
 	
@@ -137,14 +137,11 @@ impl Parser {
 	func
     }
 
-    fn current_chunk(&mut self) -> FunctionPtr {
+    fn current_chunk(&self) -> FunctionPtr {
         // Return a (mutable!) object that implements add_code, add_constant, etc
         // clone the rc:: into a new container type (FunctionRef?)
         // implement pass-thru methods on FunctionRef
-        match &self.function {
-            Value::FunctionRef(f) => FunctionPtr::new(f),
-            _ => unreachable!("function value should always have type FunctionRef"),
-        }
+	self.function.clone()
     }
 
     fn emit_byte(&mut self, byte: u8) {
