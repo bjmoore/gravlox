@@ -22,7 +22,11 @@ impl Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Bool(v) => write!(f, "{}", v),
             Value::StringRef(v) => write!(f, "{}", v.borrow()),
-            Value::FunctionRef(v) => write!(f, "{}", v.borrow().name),
+            Value::FunctionRef(v) => write!(
+                f,
+                "{}",
+                v.borrow().name.as_ref().map_or("<root>", |n| n.as_str())
+            ),
         }
     }
 }
@@ -52,7 +56,7 @@ impl Value {
 pub struct Function {
     arity: usize,
     chunk: ChunkPtr,
-    name: String,
+    name: Option<String>,
 }
 
 pub type FunctionPtr = Rc<RefCell<Function>>;
@@ -63,11 +67,11 @@ impl Function {
     }
 }
 
-pub fn new_function(name: &str) -> FunctionPtr {
+pub fn new_function() -> FunctionPtr {
     let function = Function {
         arity: 0,
-        chunk: Rc::new(RefCell::new(Chunk::new(name))),
-        name: String::from(name),
+        chunk: Rc::new(RefCell::new(Chunk::new())),
+        name: None,
     };
 
     Rc::new(RefCell::new(function))

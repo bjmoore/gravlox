@@ -1,8 +1,6 @@
 use std::cell::RefCell;
-use std::cell::RefMut;
 use std::rc::Rc;
 
-use crate::chunk::Chunk;
 use crate::chunk::ChunkPtr;
 use crate::error::GravloxError;
 use crate::lexer::Scanner;
@@ -12,6 +10,9 @@ use crate::token::TokenType;
 use crate::value::FunctionPtr;
 use crate::value::Value;
 
+use std::ops::Deref;
+use std::ops::DerefMut;
+
 pub fn compile(source: String, debug: bool) -> Option<FunctionPtr> {
     let mut parser = Parser {
         current: Token::default(),
@@ -19,24 +20,173 @@ pub fn compile(source: String, debug: bool) -> Option<FunctionPtr> {
         lexer: Scanner::new(source),
         had_error: false,
         panic_mode: false,
-        function: crate::value::new_function("main"),
-        function_type: FunctionType::Script,
-        locals: [Local::default(); MAX_LOCALS],
-        local_count: 0,
-        scope_depth: 0,
     };
+
+    let mut compiler = Take::new(Compiler::new(None, FunctionType::Script));
 
     parser.advance();
     while !parser.r#match(TokenType::Eof) {
-        declaration(&mut parser);
+        declaration(&mut parser, &mut compiler);
     }
-    let func = parser.end_compiler(debug);
+    let func = compiler.end_compiler(parser.line_number(), debug);
 
     // Return an error here
     if !parser.had_error {
         Some(func)
     } else {
         None
+    }
+}
+
+struct Compiler {
+    function: FunctionPtr,
+    function_type: FunctionType,
+    locals: [Local; MAX_LOCALS],
+    local_count: usize,
+    scope_depth: usize,
+    enclosing: Option<Box<Compiler>>,
+}
+
+impl Compiler {
+    fn new(enclosing: Option<Compiler>, r#type: FunctionType) -> Self {
+        Self {
+            function: crate::value::new_function(),
+            function_type: r#type,
+            locals: [Local::default(); MAX_LOCALS],
+            local_count: 0,
+            scope_depth: 0,
+            enclosing: enclosing.map(|c| Box::new(c)),
+        }
+    }
+
+    fn end_compiler(&mut self, line_number: u32, _debug: bool) -> FunctionPtr {
+        self.emit_return(line_number);
+        let func = self.function.clone();
+
+        func
+    }
+
+    fn current_chunk(&self) -> ChunkPtr {
+        // Return a (mutable!) object that implements add_code, add_constant, etc
+        // clone the rc:: into a new container type (FunctionRef?)
+        // implement pass-thru methods on FunctionRef
+        self.function.borrow().chunk()
+    }
+
+    fn emit_byte(&mut self, byte: u8, line_number: u32) {
+        self.current_chunk()
+            .borrow_mut()
+            .add_code(byte, line_number);
+    }
+
+    fn emit_bytes(&mut self, byte1: u8, byte2: u8, line_number: u32) {
+        self.current_chunk()
+            .borrow_mut()
+            .add_code(byte1, line_number);
+        self.current_chunk()
+            .borrow_mut()
+            .add_code(byte2, line_number);
+    }
+
+    fn emit_return(&mut self, line_number: u32) {
+        self.emit_byte(OP_RETURN, line_number);
+    }
+
+    fn emit_constant(&mut self, value: Value, line_number: u32) -> Result<usize, GravloxError> {
+        let const_idx = self
+            .current_chunk()
+            .borrow_mut()
+            .add_constant(value, line_number)?;
+
+        if const_idx < 256 {
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(OP_CONSTANT, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(const_idx as u8, line_number);
+        } else {
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(OP_CONSTANT_LONG, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code((const_idx >> 16) as u8, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code((const_idx >> 8) as u8, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(const_idx as u8, line_number);
+        }
+
+        Ok(const_idx)
+    }
+
+    fn emit_jump(&mut self, instruction: u8, line_number: u32) -> usize {
+        self.emit_byte(instruction, line_number);
+        self.emit_byte(0xFF, line_number);
+        self.emit_byte(0xFF, line_number);
+        self.current_chunk().borrow().count() - 2
+    }
+
+    fn patch_jump(&mut self, offset: usize) -> Result<(), GravloxError> {
+        let jump = self.current_chunk().borrow().count() - offset - 2;
+
+        if jump > u16::MAX.into() {
+            return Err(GravloxError::CompileError("Too much code to jump."));
+        }
+
+        self.current_chunk()
+            .borrow_mut()
+            .patch_byte(offset, (jump >> 8) as u8);
+        self.current_chunk()
+            .borrow_mut()
+            .patch_byte(offset + 1, jump as u8);
+
+        Ok(())
+    }
+
+    fn emit_loop(&mut self, location: usize, line_number: u32) -> Result<(), GravloxError> {
+        self.emit_byte(OP_LOOP, line_number);
+
+        let offset = self.current_chunk().borrow().count() - location + 2; // +2 because while processing this jump, we will advance ip by 2
+        if offset > u16::MAX.into() {
+            return Err(GravloxError::CompileError("Loop body too long."));
+        }
+
+        self.emit_byte((offset >> 8) as u8, line_number);
+        self.emit_byte(offset as u8, line_number);
+
+        Ok(())
+    }
+
+    fn add_local(&mut self, name: Token) -> Result<(), GravloxError> {
+        if self.local_count == MAX_LOCALS {
+            return Err(GravloxError::CompileError("Too many local variables"));
+        }
+
+        let local = &mut self.locals[self.local_count];
+
+        local.name = name;
+        local.depth = self.scope_depth;
+
+        self.local_count += 1;
+
+        Ok(())
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self, line_number: u32) {
+        self.scope_depth -= 1;
+
+        while self.local_count > 0 && self.locals[self.local_count - 1].depth > self.scope_depth {
+            self.emit_byte(OP_POP, line_number);
+            self.local_count -= 1;
+        }
     }
 }
 
@@ -59,14 +209,19 @@ struct Parser {
     lexer: Scanner,
     had_error: bool,
     panic_mode: bool,
-    function: FunctionPtr,
-    function_type: FunctionType,
-    locals: [Local; MAX_LOCALS],
-    local_count: usize,
-    scope_depth: usize,
 }
 
 impl Parser {
+    fn new(source: String) -> Self {
+        Self {
+            current: Token::default(),
+            previous: Token::default(),
+            lexer: Scanner::new(source),
+            had_error: false,
+            panic_mode: false,
+        }
+    }
+
     fn advance(&mut self) {
         self.previous = self.current;
         loop {
@@ -129,120 +284,8 @@ impl Parser {
         }
     }
 
-    fn end_compiler(&mut self, debug: bool) -> FunctionPtr {
-        self.emit_return();
-        let func = self.function.clone();
-
-        if !self.had_error && debug {
-            print!("{}", self.current_chunk().borrow());
-        }
-
-        func
-    }
-
-    fn current_chunk(&self) -> ChunkPtr {
-        // Return a (mutable!) object that implements add_code, add_constant, etc
-        // clone the rc:: into a new container type (FunctionRef?)
-        // implement pass-thru methods on FunctionRef
-        self.function.borrow().chunk()
-    }
-
-    fn emit_byte(&mut self, byte: u8) {
-        let line_number = self.previous.line;
-        self.current_chunk()
-            .borrow_mut()
-            .add_code(byte, line_number);
-    }
-
-    fn emit_bytes(&mut self, byte1: u8, byte2: u8) {
-        let line_number = self.previous.line;
-        self.current_chunk()
-            .borrow_mut()
-            .add_code(byte1, line_number);
-        self.current_chunk()
-            .borrow_mut()
-            .add_code(byte2, line_number);
-    }
-
-    fn emit_return(&mut self) {
-        self.emit_byte(OP_RETURN);
-    }
-
-    fn emit_constant(&mut self, value: Value) -> usize {
-        let line_number = self.previous.line;
-        let const_idx = self
-            .current_chunk()
-            .borrow_mut()
-            .add_constant(value, line_number)
-            .unwrap_or_else(|e| {
-                self.error_at(self.previous, e);
-                0
-            });
-
-        if const_idx < 256 {
-            self.current_chunk()
-                .borrow_mut()
-                .add_code(OP_CONSTANT, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code(const_idx as u8, line_number);
-        } else {
-            self.current_chunk()
-                .borrow_mut()
-                .add_code(OP_CONSTANT_LONG, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code((const_idx >> 16) as u8, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code((const_idx >> 8) as u8, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code(const_idx as u8, line_number);
-        }
-
-        const_idx
-    }
-
-    // Push these down into the Chunk impl.
-    fn emit_jump(&mut self, instruction: u8) -> usize {
-        self.emit_byte(instruction);
-        self.emit_byte(0xFF);
-        self.emit_byte(0xFF);
-        self.current_chunk().borrow().count() - 2
-    }
-
-    fn patch_jump(&mut self, offset: usize) {
-        let jump = self.current_chunk().borrow().count() - offset - 2;
-
-        if jump > u16::MAX.into() {
-            self.error_at(
-                self.previous,
-                GravloxError::CompileError("Too much code to jump."),
-            );
-        }
-
-        self.current_chunk()
-            .borrow_mut()
-            .patch_byte(offset, (jump >> 8) as u8);
-        self.current_chunk()
-            .borrow_mut()
-            .patch_byte(offset + 1, jump as u8);
-    }
-
-    fn emit_loop(&mut self, location: usize) {
-        self.emit_byte(OP_LOOP);
-
-        let offset = self.current_chunk().borrow().count() - location + 2; // +2 because while processing this jump, we will advance ip by 2
-        if offset > u16::MAX.into() {
-            self.error_at(
-                self.previous,
-                GravloxError::CompileError("Loop body too long."),
-            );
-        }
-
-        self.emit_byte((offset >> 8) as u8);
-        self.emit_byte(offset as u8);
+    fn error(&mut self, err: GravloxError) {
+        self.error_at(self.previous, err);
     }
 
     fn error_at(&mut self, token: Token, err: GravloxError) {
@@ -267,38 +310,12 @@ impl Parser {
         self.lexer.lexeme(self.previous)
     }
 
-    fn begin_scope(&mut self) {
-        self.scope_depth += 1;
-    }
-
-    fn end_scope(&mut self) {
-        self.scope_depth -= 1;
-
-        while self.local_count > 0 && self.locals[self.local_count - 1].depth > self.scope_depth {
-            self.emit_byte(OP_POP);
-            self.local_count -= 1;
-        }
-    }
-
-    fn add_local(&mut self, name: Token) {
-        if self.local_count == MAX_LOCALS {
-            self.error_at(
-                self.previous,
-                GravloxError::CompileError("Too many local variables"),
-            );
-            return;
-        }
-
-        let local = &mut self.locals[self.local_count];
-
-        local.name = name;
-        local.depth = self.scope_depth;
-
-        self.local_count += 1;
+    fn line_number(&self) -> u32 {
+        self.previous.line
     }
 }
 
-fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
+fn parse_precedence(parser: &mut Parser, compiler: &mut Take<Compiler>, precedence: Precedence) {
     parser.advance();
     let mut prefix_rule = match get_rule(parser.previous.t).0 {
         Some(rule) => rule,
@@ -312,13 +329,13 @@ fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
     };
 
     let assignable = precedence <= Precedence::Assignment;
-    prefix_rule(parser, assignable);
+    prefix_rule(parser, compiler, assignable);
 
     while precedence < get_rule(parser.current.t).2 {
         parser.advance();
         let infix_rule = get_rule(parser.previous.t).1;
         match infix_rule {
-            Some(mut rule) => rule(parser, assignable),
+            Some(mut rule) => rule(parser, compiler, assignable),
             None => (),
         }
     }
@@ -331,11 +348,11 @@ fn parse_precedence(parser: &mut Parser, precedence: Precedence) {
     }
 }
 
-fn declaration(parser: &mut Parser) {
+fn declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     if parser.r#match(TokenType::Var) {
-        var_declaration(parser);
+        var_declaration(parser, compiler);
     } else {
-        statement(parser);
+        statement(parser, compiler);
     }
 
     if parser.panic_mode {
@@ -343,13 +360,13 @@ fn declaration(parser: &mut Parser) {
     }
 }
 
-fn var_declaration(parser: &mut Parser) {
-    let global = parse_variable(parser, "Expect variable name.");
+fn var_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    let global = parse_variable(parser, compiler, "Expect variable name.");
 
     if parser.r#match(TokenType::Equal) {
-        expression(parser);
+        expression(parser, compiler);
     } else {
-        parser.emit_byte(OP_NIL);
+        compiler.emit_byte(OP_NIL, parser.line_number());
     }
 
     parser.consume(
@@ -357,48 +374,53 @@ fn var_declaration(parser: &mut Parser) {
         "Expect ';' after variable declaration.",
     );
 
-    define_variable(parser, global);
+    define_variable(parser, compiler, global);
 }
 
-fn parse_variable(parser: &mut Parser, message: &'static str) -> usize {
+fn parse_variable(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    message: &'static str,
+) -> usize {
     parser.consume(TokenType::Identifier, message);
 
-    declare_variable(parser);
-    if parser.scope_depth > 0 {
+    declare_variable(parser, compiler);
+    if compiler.scope_depth > 0 {
         return 0;
     }
 
-    identifier_constant(parser)
+    identifier_constant(parser, compiler)
 }
 
-fn declare_variable(parser: &mut Parser) {
-    if parser.scope_depth == 0 {
+fn declare_variable(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    if compiler.scope_depth == 0 {
         return;
     }
 
     let name = parser.previous;
-    for i in (0..parser.local_count).rev() {
-        let local = parser.locals[i];
-        if local.depth < parser.scope_depth {
+    for i in (0..compiler.local_count).rev() {
+        let local = compiler.locals[i];
+        if local.depth < compiler.scope_depth {
             break;
         }
 
-        if identifers_equal(parser, name, local.name) {
-            // TODO: error here
+        if identifiers_equal(parser, name, local.name) {
             parser.error_at(
                 parser.previous,
                 GravloxError::CompileError("Variable already defined in this scope."),
             );
         }
     }
-    parser.add_local(name);
+    compiler
+        .add_local(name)
+        .inspect_err(|e| parser.error(e.clone()));
 }
 
-fn identifier_constant(parser: &mut Parser) -> usize {
+fn identifier_constant(parser: &mut Parser, compiler: &mut Take<Compiler>) -> usize {
     let name = parser.lexeme();
     let heap_obj = Rc::new(RefCell::new(name.to_owned()));
     let line = parser.previous.line;
-    parser
+    compiler
         .current_chunk()
         .borrow_mut()
         .add_constant(Value::StringRef(heap_obj), line)
@@ -408,259 +430,289 @@ fn identifier_constant(parser: &mut Parser) -> usize {
         })
 }
 
-fn identifers_equal(parser: &Parser, a: Token, b: Token) -> bool {
+fn identifiers_equal(parser: &Parser, a: Token, b: Token) -> bool {
     if a.len != b.len {
         return false;
     }
     parser.lexer.lexeme(a) == parser.lexer.lexeme(b)
 }
 
-fn define_variable(parser: &mut Parser, global: usize) {
-    if parser.scope_depth > 0 {
+fn define_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, global: usize) {
+    if compiler.scope_depth > 0 {
         return;
     }
 
     // TODO: Since we support 24-bit constants with OP_CONSTANT_LONG, we should have an OP_DEFINE_GLOBAL_LONG
-    parser.emit_bytes(OP_DEFINE_GLOBAL, global as u8);
+    compiler.emit_bytes(OP_DEFINE_GLOBAL, global as u8, parser.line_number());
 }
 
-fn and(parser: &mut Parser, _assignable: bool) {
-    let end_jump = parser.emit_jump(OP_JUMP_IF_FALSE);
+fn and(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+    let end_jump = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
 
-    parser.emit_byte(OP_POP);
-    parse_precedence(parser, Precedence::And);
+    compiler.emit_byte(OP_POP, parser.line_number());
+    parse_precedence(parser, compiler, Precedence::And);
 
-    parser.patch_jump(end_jump);
+    compiler
+        .patch_jump(end_jump)
+        .inspect_err(|e| parser.error(e.clone()));
 }
 
-fn or(parser: &mut Parser, _assignable: bool) {
-    let else_jump = parser.emit_jump(OP_JUMP_IF_FALSE);
-    let end_jump = parser.emit_jump(OP_JUMP);
+fn or(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+    let else_jump = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
+    let end_jump = compiler.emit_jump(OP_JUMP, parser.line_number());
 
-    parser.patch_jump(else_jump);
+    compiler
+        .patch_jump(else_jump)
+        .inspect_err(|e| parser.error(e.clone()));
 
-    parser.emit_byte(OP_POP);
-    parse_precedence(parser, Precedence::Or);
+    compiler.emit_byte(OP_POP, parser.line_number());
+    parse_precedence(parser, compiler, Precedence::Or);
 
-    parser.patch_jump(end_jump);
+    compiler
+        .patch_jump(end_jump)
+        .inspect_err(|e| parser.error(e.clone()));
 }
 
-fn statement(parser: &mut Parser) {
+fn statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     if parser.r#match(TokenType::Print) {
-        print_statement(parser);
+        print_statement(parser, compiler);
     } else if parser.r#match(TokenType::LeftBrace) {
-        parser.begin_scope();
-        block(parser);
-        parser.end_scope();
+        compiler.begin_scope();
+        block(parser, compiler);
+        compiler.end_scope(parser.line_number());
     } else if parser.r#match(TokenType::If) {
-        if_statement(parser);
+        if_statement(parser, compiler);
     } else if parser.r#match(TokenType::While) {
-        while_statement(parser);
+        while_statement(parser, compiler);
     } else if parser.r#match(TokenType::For) {
-        for_statement(parser);
+        for_statement(parser, compiler);
     } else {
-        expression_statement(parser);
+        expression_statement(parser, compiler);
     }
 }
 
-fn print_statement(parser: &mut Parser) {
-    expression(parser);
+fn print_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    expression(parser, compiler);
     parser.consume(TokenType::Semicolon, "Expect ';' after value.");
-    parser.emit_byte(OP_PRINT);
+    compiler.emit_byte(OP_PRINT, parser.line_number());
 }
 
-fn if_statement(parser: &mut Parser) {
+fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
-    expression(parser);
+    expression(parser, compiler);
     parser.consume(TokenType::RightParen, "Expect ')' after condition.");
 
-    let then_jump = parser.emit_jump(OP_JUMP_IF_FALSE);
+    let then_jump = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
 
-    parser.emit_byte(OP_POP);
-    statement(parser);
+    compiler.emit_byte(OP_POP, parser.line_number());
+    statement(parser, compiler);
 
-    let else_jump = parser.emit_jump(OP_JUMP);
+    let else_jump = compiler.emit_jump(OP_JUMP, parser.line_number());
 
-    parser.patch_jump(then_jump);
+    compiler
+        .patch_jump(then_jump)
+        .inspect_err(|e| parser.error(e.clone()));
 
-    parser.emit_byte(OP_POP);
+    compiler.emit_byte(OP_POP, parser.line_number());
     if parser.r#match(TokenType::Else) {
-        statement(parser);
+        statement(parser, compiler);
     }
 
-    parser.patch_jump(else_jump);
+    compiler
+        .patch_jump(else_jump)
+        .inspect_err(|e| parser.error(e.clone()));
 }
 
-fn while_statement(parser: &mut Parser) {
-    let loop_start = parser.current_chunk().borrow().count();
+fn while_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    let loop_start = compiler.current_chunk().borrow().count();
 
     parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
-    expression(parser);
+    expression(parser, compiler);
     parser.consume(TokenType::RightParen, "Expect ')' after condition.");
 
-    let exit_loop = parser.emit_jump(OP_JUMP_IF_FALSE);
-    parser.emit_byte(OP_POP);
+    let exit_loop = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
+    compiler.emit_byte(OP_POP, parser.line_number());
 
-    statement(parser);
-    parser.emit_loop(loop_start);
+    statement(parser, compiler);
+    compiler
+        .emit_loop(loop_start, parser.line_number())
+        .inspect_err(|e| parser.error(e.clone()));
 
-    parser.patch_jump(exit_loop);
-    parser.emit_byte(OP_POP);
+    compiler
+        .patch_jump(exit_loop)
+        .inspect_err(|e| parser.error(e.clone()));
+    compiler.emit_byte(OP_POP, parser.line_number());
 }
 
-fn for_statement(parser: &mut Parser) {
-    parser.begin_scope();
+fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    compiler.begin_scope();
     parser.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
 
     // initializer
     if parser.r#match(TokenType::Semicolon) {
         // No initializer.
     } else if parser.r#match(TokenType::Var) {
-        var_declaration(parser);
+        var_declaration(parser, compiler);
     } else {
-        expression_statement(parser);
+        expression_statement(parser, compiler);
     }
 
-    let mut loop_start = parser.current_chunk().borrow().count();
+    let mut loop_start = compiler.current_chunk().borrow().count();
     let mut exit_jump = None;
 
     // condition
     if !parser.r#match(TokenType::Semicolon) {
-        expression(parser);
+        expression(parser, compiler);
         parser.consume(TokenType::Semicolon, "Expect ';' after for loop condition.");
 
-        exit_jump = Some(parser.emit_jump(OP_JUMP_IF_FALSE));
-        parser.emit_byte(OP_POP);
+        exit_jump = Some(compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number()));
+        compiler.emit_byte(OP_POP, parser.line_number());
     }
 
     // increment
     if !parser.r#match(TokenType::RightParen) {
-        let body_jump = parser.emit_jump(OP_JUMP);
-        let increment_start = parser.current_chunk().borrow().count();
-        expression(parser);
-        parser.emit_byte(OP_POP);
+        let body_jump = compiler.emit_jump(OP_JUMP, parser.line_number());
+        let increment_start = compiler.current_chunk().borrow().count();
+        expression(parser, compiler);
+        compiler.emit_byte(OP_POP, parser.line_number());
         parser.consume(
             TokenType::RightParen,
             "Expect ')' after for loop increment.",
         );
-        parser.emit_loop(loop_start);
+        compiler
+            .emit_loop(loop_start, parser.line_number())
+            .inspect_err(|e| parser.error(e.clone()));
         loop_start = increment_start;
-        parser.patch_jump(body_jump);
+        compiler
+            .patch_jump(body_jump)
+            .inspect_err(|e| parser.error(e.clone()));
     }
 
-    statement(parser);
+    statement(parser, compiler);
 
-    parser.emit_loop(loop_start);
+    compiler
+        .emit_loop(loop_start, parser.line_number())
+        .inspect_err(|e| parser.error(e.clone()));
     if let Some(exit_jump) = exit_jump {
-        parser.patch_jump(exit_jump);
+        compiler
+            .patch_jump(exit_jump)
+            .inspect_err(|e| parser.error(e.clone()));
     }
-    parser.emit_byte(OP_POP);
-    parser.end_scope();
+    compiler.emit_byte(OP_POP, parser.line_number());
+    compiler.end_scope(parser.line_number());
 }
 
-fn expression_statement(parser: &mut Parser) {
-    expression(parser);
+fn expression_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    expression(parser, compiler);
     parser.consume(TokenType::Semicolon, "Expect ';' after expression.");
-    parser.emit_byte(OP_POP);
+    compiler.emit_byte(OP_POP, parser.line_number());
 }
 
-fn block(parser: &mut Parser) {
+fn block(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     while !(parser.current.t == TokenType::RightBrace) && !(parser.current.t == TokenType::Eof) {
-        declaration(parser);
+        declaration(parser, compiler);
     }
 
     parser.consume(TokenType::RightBrace, "Expect '}' after block.");
 }
 
-fn expression(parser: &mut Parser) {
-    parse_precedence(parser, Precedence::Assignment);
+fn function(parser: &mut Parser, compiler: &mut Take<Compiler>, function_type: FunctionType) {
+    compiler.push_compiler(function_type);
 }
 
-fn unary(parser: &mut Parser, _assignable: bool) {
+fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    parse_precedence(parser, compiler, Precedence::Assignment);
+}
+
+fn unary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
     let operator_type = parser.previous.t;
 
-    parse_precedence(parser, Precedence::Unary);
+    parse_precedence(parser, compiler, Precedence::Unary);
 
     match operator_type {
-        TokenType::Bang => parser.emit_byte(OP_NOT),
-        TokenType::Minus => parser.emit_byte(OP_NEGATE),
+        TokenType::Bang => compiler.emit_byte(OP_NOT, parser.line_number()),
+        TokenType::Minus => compiler.emit_byte(OP_NEGATE, parser.line_number()),
         _ => unreachable!(),
     }
 }
 
-fn binary(parser: &mut Parser, _assignable: bool) {
+fn binary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
     let operator_type = parser.previous.t;
     let parse_rule = get_rule(operator_type);
-    parse_precedence(parser, parse_rule.2.plus_one());
+    parse_precedence(parser, compiler, parse_rule.2.plus_one());
 
     match operator_type {
-        TokenType::Plus => parser.emit_byte(OP_ADD),
-        TokenType::Minus => parser.emit_byte(OP_SUBTRACT),
-        TokenType::Star => parser.emit_byte(OP_MULTIPLY),
-        TokenType::Slash => parser.emit_byte(OP_DIVIDE),
-        TokenType::BangEqual => parser.emit_bytes(OP_EQUAL, OP_NOT),
-        TokenType::EqualEqual => parser.emit_byte(OP_EQUAL),
-        TokenType::Greater => parser.emit_byte(OP_GREATER),
-        TokenType::GreaterEqual => parser.emit_bytes(OP_GREATER, OP_NOT),
-        TokenType::Less => parser.emit_byte(OP_LESS),
-        TokenType::LessEqual => parser.emit_bytes(OP_LESS, OP_NOT),
+        TokenType::Plus => compiler.emit_byte(OP_ADD, parser.line_number()),
+        TokenType::Minus => compiler.emit_byte(OP_SUBTRACT, parser.line_number()),
+        TokenType::Star => compiler.emit_byte(OP_MULTIPLY, parser.line_number()),
+        TokenType::Slash => compiler.emit_byte(OP_DIVIDE, parser.line_number()),
+        TokenType::BangEqual => compiler.emit_bytes(OP_EQUAL, OP_NOT, parser.line_number()),
+        TokenType::EqualEqual => compiler.emit_byte(OP_EQUAL, parser.line_number()),
+        TokenType::Greater => compiler.emit_byte(OP_GREATER, parser.line_number()),
+        TokenType::GreaterEqual => compiler.emit_bytes(OP_GREATER, OP_NOT, parser.line_number()),
+        TokenType::Less => compiler.emit_byte(OP_LESS, parser.line_number()),
+        TokenType::LessEqual => compiler.emit_bytes(OP_LESS, OP_NOT, parser.line_number()),
         _ => unreachable!(),
     }
 }
 
-fn grouping(parser: &mut Parser, _assignable: bool) {
-    expression(parser);
+fn grouping(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+    expression(parser, compiler);
     parser.consume(TokenType::RightParen, "Expect ')' after expression.");
 }
 
-fn number(parser: &mut Parser, _assignable: bool) {
+fn number(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
     let lexeme = parser.lexer.lexeme(parser.previous);
     let number = lexeme.parse::<f64>().unwrap();
-    parser.emit_constant(Value::Number(number));
+    compiler
+        .emit_constant(Value::Number(number), parser.line_number())
+        .inspect_err(|e| parser.error(e.clone()));
 }
 
-fn literal(parser: &mut Parser, _assignable: bool) {
+fn literal(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
     let operator_type = parser.previous.t;
 
     match operator_type {
-        TokenType::Nil => parser.emit_byte(OP_NIL),
-        TokenType::True => parser.emit_byte(OP_TRUE),
-        TokenType::False => parser.emit_byte(OP_FALSE),
+        TokenType::Nil => compiler.emit_byte(OP_NIL, parser.line_number()),
+        TokenType::True => compiler.emit_byte(OP_TRUE, parser.line_number()),
+        TokenType::False => compiler.emit_byte(OP_FALSE, parser.line_number()),
         _ => unreachable!(),
     }
 }
 
-fn string(parser: &mut Parser, _assignable: bool) {
+fn string(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
     let str_value = parser.lexer.string_lexeme(parser.previous);
     let heap_obj = Rc::new(RefCell::new(str_value.to_owned()));
-    parser.emit_constant(Value::StringRef(heap_obj));
+    compiler
+        .emit_constant(Value::StringRef(heap_obj), parser.line_number())
+        .inspect_err(|e| parser.error(e.clone()));
 }
 
-fn variable(parser: &mut Parser, assignable: bool) {
-    named_variable(parser, assignable);
+fn variable(parser: &mut Parser, compiler: &mut Take<Compiler>, assignable: bool) {
+    named_variable(parser, compiler, assignable);
 }
 
-fn named_variable(parser: &mut Parser, assignable: bool) {
-    let (get_op, set_op, arg) = match resolve_local(parser) {
+fn named_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, assignable: bool) {
+    let (get_op, set_op, arg) = match resolve_local(parser, compiler) {
         Some(arg) => (OP_GET_LOCAL, OP_SET_LOCAL, arg),
         None => {
-            let arg = identifier_constant(parser) as u8;
+            let arg = identifier_constant(parser, compiler) as u8;
             (OP_GET_GLOBAL, OP_SET_GLOBAL, arg)
         }
     };
 
     if assignable && parser.r#match(TokenType::Equal) {
-        expression(parser);
-        parser.emit_bytes(set_op, arg);
+        expression(parser, compiler);
+        compiler.emit_bytes(set_op, arg, parser.line_number());
     } else {
-        parser.emit_bytes(get_op, arg);
+        compiler.emit_bytes(get_op, arg, parser.line_number());
     }
 }
 
-fn resolve_local(parser: &mut Parser) -> Option<u8> {
-    for i in (0..parser.local_count).rev() {
-        let local = parser.locals[i];
-        if identifers_equal(parser, local.name, parser.previous) {
+fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<u8> {
+    for i in (0..compiler.local_count).rev() {
+        let local = compiler.locals[i];
+        if identifiers_equal(parser, local.name, parser.previous) {
             return Some(i as u8);
         }
     }
@@ -669,8 +721,8 @@ fn resolve_local(parser: &mut Parser) -> Option<u8> {
 }
 
 struct ParseRule(
-    Option<Box<dyn FnMut(&mut Parser, bool)>>,
-    Option<Box<dyn FnMut(&mut Parser, bool)>>,
+    Option<Box<dyn FnMut(&mut Parser, &mut Take<Compiler>, bool)>>,
+    Option<Box<dyn FnMut(&mut Parser, &mut Take<Compiler>, bool)>>,
     Precedence,
 );
 
@@ -750,5 +802,40 @@ impl Precedence {
             Self::Call => Self::Primary,
             Self::Primary => panic!(),
         }
+    }
+}
+
+struct Take<T> {
+    value: Option<T>,
+}
+
+impl<T> Take<T> {
+    fn new(value: T) -> Self {
+        Self { value: Some(value) }
+    }
+
+    fn take(&mut self) -> Option<T> {
+        self.value.take()
+    }
+}
+
+impl<T> Deref for Take<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.value.as_ref().unwrap()
+    }
+}
+
+impl<T> DerefMut for Take<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.value.as_mut().unwrap()
+    }
+}
+
+impl Take<Compiler> {
+    fn push_compiler(&mut self, function_type: FunctionType) {
+        let enclosing = self.take();
+        std::mem::replace(self, Take::new(Compiler::new(enclosing, function_type)));
     }
 }

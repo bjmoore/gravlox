@@ -26,7 +26,6 @@ impl Display for MaxConstantsError {
 }
 
 pub struct Chunk {
-    name: String,
     code: Vec<u8>,
     constants: Vec<Value>,
     lineinfo: Vec<(u32, u32)>,
@@ -37,7 +36,6 @@ pub type ChunkPtr = Rc<RefCell<Chunk>>;
 impl std::fmt::Debug for Chunk {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         fmt.debug_struct("Chunk")
-            .field("name", &self.name)
             .field("code", &self.code)
             .field("constants", &self.constants)
             .finish()
@@ -45,9 +43,8 @@ impl std::fmt::Debug for Chunk {
 }
 
 impl Chunk {
-    pub fn new(name: &str) -> Self {
+    pub fn new() -> Self {
         Self {
-            name: String::from(name),
             code: Vec::new(),
             constants: Vec::new(),
             lineinfo: Vec::new(),
@@ -168,7 +165,6 @@ impl Display for Chunk {
         let mut current_line_idx = 0;
         let mut current_line = &(0, 0);
         let mut line_display;
-        writeln!(f, "==== {} ====", self.name)?;
 
         while idx < self.code.len() {
             if current_line_idx == current_line.1 {
@@ -343,7 +339,7 @@ mod test {
 
     #[test]
     fn test_overflow_to_constant_long() {
-        let mut test_chunk = Chunk::new("test");
+        let mut test_chunk = Chunk::new();
         for _ in 0..=256 {
             let _ = test_chunk.add_constant(Value::Number(1.234), 0);
         }
