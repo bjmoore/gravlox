@@ -54,7 +54,7 @@ impl Value {
 
 #[derive(Debug)]
 pub struct Function {
-    arity: usize,
+    pub arity: usize,
     chunk: ChunkPtr,
     name: Option<String>,
 }
@@ -67,11 +67,11 @@ impl Function {
     }
 }
 
-pub fn new_function() -> FunctionPtr {
+pub fn new_function(name: Option<&str>) -> FunctionPtr {
     let function = Function {
         arity: 0,
         chunk: Rc::new(RefCell::new(Chunk::new())),
-        name: None,
+        name: name.map(|s| s.to_owned()),
     };
 
     Rc::new(RefCell::new(function))

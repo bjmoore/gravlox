@@ -22,7 +22,7 @@ pub fn compile(source: String, debug: bool) -> Option<FunctionPtr> {
         panic_mode: false,
     };
 
-    let mut compiler = Take::new(Compiler::new(None, FunctionType::Script));
+    let mut compiler = Take::new(Compiler::new(None, FunctionType::Script, Some("<root>")));
 
     parser.advance();
     while !parser.r#match(TokenType::Eof) {
@@ -48,9 +48,9 @@ struct Compiler {
 }
 
 impl Compiler {
-    fn new(enclosing: Option<Compiler>, r#type: FunctionType) -> Self {
+    fn new(enclosing: Option<Compiler>, r#type: FunctionType, name: Option<&str>) -> Self {
         Self {
-            function: crate::value::new_function(),
+            function: crate::value::new_function(name),
             function_type: r#type,
             locals: [Local::default(); MAX_LOCALS],
             local_count: 0,
@@ -169,11 +169,18 @@ impl Compiler {
         let local = &mut self.locals[self.local_count];
 
         local.name = name;
-        local.depth = self.scope_depth;
+        local.depth = None;
 
         self.local_count += 1;
 
         Ok(())
+    }
+
+    fn mark_initialized(&mut self) {
+        if self.scope_depth == 0 {
+            return;
+        }
+        self.locals[self.local_count - 1].depth = Some(self.scope_depth);
     }
 
     fn begin_scope(&mut self) {
@@ -183,7 +190,9 @@ impl Compiler {
     fn end_scope(&mut self, line_number: u32) {
         self.scope_depth -= 1;
 
-        while self.local_count > 0 && self.locals[self.local_count - 1].depth > self.scope_depth {
+        while self.local_count > 0
+            && self.locals[self.local_count - 1].depth.unwrap() > self.scope_depth
+        {
             self.emit_byte(OP_POP, line_number);
             self.local_count -= 1;
         }
@@ -195,7 +204,7 @@ const MAX_LOCALS: usize = 256;
 #[derive(Debug, Default, Clone, Copy)]
 struct Local {
     name: Token,
-    depth: usize,
+    depth: Option<usize>,
 }
 
 enum FunctionType {
@@ -276,6 +285,10 @@ impl Parser {
         false
     }
 
+    fn check(&self, t: TokenType) -> bool {
+        self.current.t == t
+    }
+
     fn consume(&mut self, t: TokenType, message: &'static str) {
         if self.current.t == t {
             self.advance();
@@ -349,7 +362,9 @@ fn parse_precedence(parser: &mut Parser, compiler: &mut Take<Compiler>, preceden
 }
 
 fn declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
-    if parser.r#match(TokenType::Var) {
+    if parser.r#match(TokenType::Fun) {
+        fun_declaration(parser, compiler);
+    } else if parser.r#match(TokenType::Var) {
         var_declaration(parser, compiler);
     } else {
         statement(parser, compiler);
@@ -400,8 +415,10 @@ fn declare_variable(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     let name = parser.previous;
     for i in (0..compiler.local_count).rev() {
         let local = compiler.locals[i];
-        if local.depth < compiler.scope_depth {
-            break;
+        if let Some(depth) = local.depth {
+            if depth < compiler.scope_depth {
+                break;
+            }
         }
 
         if identifiers_equal(parser, name, local.name) {
@@ -439,6 +456,7 @@ fn identifiers_equal(parser: &Parser, a: Token, b: Token) -> bool {
 
 fn define_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, global: usize) {
     if compiler.scope_depth > 0 {
+        compiler.mark_initialized();
         return;
     }
 
@@ -616,8 +634,35 @@ fn block(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     parser.consume(TokenType::RightBrace, "Expect '}' after block.");
 }
 
+fn fun_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    let global = parse_variable(parser, compiler, "Expect variable name.");
+    compiler.mark_initialized();
+    function(parser, compiler, FunctionType::Function);
+    define_variable(parser, compiler, global);
+}
+
 fn function(parser: &mut Parser, compiler: &mut Take<Compiler>, function_type: FunctionType) {
-    compiler.push_compiler(function_type);
+    compiler.push_compiler(function_type, Some(parser.lexer.lexeme(parser.previous)));
+    compiler.begin_scope();
+
+    parser.consume(TokenType::LeftParen, "Expect '(' after function name.");
+    if !parser.check(TokenType::RightParen) {
+        loop {
+            compiler.function.borrow_mut().arity += 1;
+            if (compiler.function.borrow().arity > 255) {
+                // emit too many arguments error
+            }
+            let constant = parse_variable(parser, compiler, "Expect parameter name.");
+            define_variable(parser, compiler, constant);
+        }
+    }
+    parser.consume(TokenType::RightParen, "Expect ')' after function name.");
+    parser.consume(TokenType::LeftBrace, "Expect '{' before function body.");
+    block(parser, compiler);
+
+    let func = compiler.end_compiler(parser.line_number(), false);
+    compiler.pop_compiler();
+    compiler.emit_constant(Value::FunctionRef(func), parser.line_number());
 }
 
 fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) {
@@ -834,8 +879,13 @@ impl<T> DerefMut for Take<T> {
 }
 
 impl Take<Compiler> {
-    fn push_compiler(&mut self, function_type: FunctionType) {
+    fn push_compiler(&mut self, function_type: FunctionType, name: Option<&str>) {
         let enclosing = self.take();
-        std::mem::replace(self, Take::new(Compiler::new(enclosing, function_type)));
+        let _ = std::mem::replace(self, Take::new(Compiler::new(enclosing, function_type, name)));
+    }
+
+    fn pop_compiler(&mut self) {
+        let enclosing = *self.take().unwrap().enclosing.unwrap();
+        let _ = std::mem::replace(self, Take::new(enclosing));
     }
 }
