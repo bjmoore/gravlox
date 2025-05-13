@@ -654,6 +654,9 @@ fn function(parser: &mut Parser, compiler: &mut Take<Compiler>, function_type: F
             }
             let constant = parse_variable(parser, compiler, "Expect parameter name.");
             define_variable(parser, compiler, constant);
+            if !parser.r#match(TokenType::Comma) {
+                break;
+            }
         }
     }
     parser.consume(TokenType::RightParen, "Expect ')' after function name.");
@@ -881,7 +884,10 @@ impl<T> DerefMut for Take<T> {
 impl Take<Compiler> {
     fn push_compiler(&mut self, function_type: FunctionType, name: Option<&str>) {
         let enclosing = self.take();
-        let _ = std::mem::replace(self, Take::new(Compiler::new(enclosing, function_type, name)));
+        let _ = std::mem::replace(
+            self,
+            Take::new(Compiler::new(enclosing, function_type, name)),
+        );
     }
 
     fn pop_compiler(&mut self) {
