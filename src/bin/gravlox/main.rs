@@ -12,7 +12,9 @@ mod chunk;
 mod compiler;
 mod error;
 mod lexer;
+mod obj;
 mod op;
+mod take;
 mod token;
 mod value;
 mod vm;
@@ -42,7 +44,7 @@ fn run_script(filename: &str, debug: bool) -> Result<(), Box<dyn Error>> {
     let script = compile(source, debug);
 
     if let Some(script) = script {
-	vm.interpret(script)?;
+        vm.interpret(script)?;
     }
 
     Ok(())
@@ -57,8 +59,8 @@ fn repl(debug: bool) -> Result<(), Box<dyn Error>> {
         io::stdin().read_line(&mut buf)?;
 
         let script = compile(buf.clone(), debug);
-	if let Some(script) = script {
-	    vm.interpret(script)?;
-	}
+        if let Some(script) = script {
+            vm.interpret(script)?;
+        }
     }
 }

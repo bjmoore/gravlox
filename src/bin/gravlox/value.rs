@@ -1,8 +1,7 @@
 use crate::chunk::Chunk;
 use crate::chunk::ChunkPtr;
-use crate::error::GravloxError;
+use crate::obj::{make_obj, Obj};
 use std::cell::RefCell;
-use std::cell::RefMut;
 use std::fmt::Display;
 use std::rc::Rc;
 
@@ -11,8 +10,8 @@ pub enum Value {
     Number(f64),
     Nil,
     Bool(bool),
-    StringRef(Rc<RefCell<String>>),
-    FunctionRef(Rc<RefCell<Function>>),
+    StringRef(Obj<String>),
+    FunctionRef(Obj<Function>),
 }
 
 impl Display for Value {
@@ -55,26 +54,22 @@ impl Value {
 #[derive(Debug)]
 pub struct Function {
     pub arity: usize,
-    chunk: ChunkPtr,
+    chunk: Obj<Chunk>,
     name: Option<String>,
 }
 
-pub type FunctionPtr = Rc<RefCell<Function>>;
-
 impl Function {
+    pub fn new(name: Option<&str>) -> Self {
+        Self {
+            arity: 0,
+            chunk: make_obj(Chunk::new()),
+            name: name.map(String::from),
+        }
+    }
+
     pub fn chunk(&self) -> ChunkPtr {
         self.chunk.clone()
     }
-}
-
-pub fn new_function(name: Option<&str>) -> FunctionPtr {
-    let function = Function {
-        arity: 0,
-        chunk: Rc::new(RefCell::new(Chunk::new())),
-        name: name.map(|s| s.to_owned()),
-    };
-
-    Rc::new(RefCell::new(function))
 }
 
 #[cfg(test)]

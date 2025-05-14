@@ -4,16 +4,15 @@ use std::rc::Rc;
 use crate::chunk::ChunkPtr;
 use crate::error::GravloxError;
 use crate::lexer::Scanner;
+use crate::obj::{make_obj, Obj};
 use crate::op::*;
+use crate::take::Take;
 use crate::token::Token;
 use crate::token::TokenType;
-use crate::value::FunctionPtr;
+use crate::value::Function;
 use crate::value::Value;
 
-use std::ops::Deref;
-use std::ops::DerefMut;
-
-pub fn compile(source: String, debug: bool) -> Option<FunctionPtr> {
+pub fn compile(source: String, debug: bool) -> Option<Obj<Function>> {
     let mut parser = Parser {
         current: Token::default(),
         previous: Token::default(),
@@ -39,7 +38,7 @@ pub fn compile(source: String, debug: bool) -> Option<FunctionPtr> {
 }
 
 struct Compiler {
-    function: FunctionPtr,
+    function: Obj<Function>,
     function_type: FunctionType,
     locals: [Local; MAX_LOCALS],
     local_count: usize,
@@ -50,7 +49,7 @@ struct Compiler {
 impl Compiler {
     fn new(enclosing: Option<Compiler>, r#type: FunctionType, name: Option<&str>) -> Self {
         Self {
-            function: crate::value::new_function(name),
+            function: make_obj(Function::new(name)),
             function_type: r#type,
             locals: [Local::default(); MAX_LOCALS],
             local_count: 0,
@@ -59,7 +58,7 @@ impl Compiler {
         }
     }
 
-    fn end_compiler(&mut self, line_number: u32, _debug: bool) -> FunctionPtr {
+    fn end_compiler(&mut self, line_number: u32, _debug: bool) -> Obj<Function> {
         self.emit_return(line_number);
         let func = self.function.clone();
 
@@ -649,7 +648,7 @@ fn function(parser: &mut Parser, compiler: &mut Take<Compiler>, function_type: F
     if !parser.check(TokenType::RightParen) {
         loop {
             compiler.function.borrow_mut().arity += 1;
-            if (compiler.function.borrow().arity > 255) {
+            if compiler.function.borrow().arity > 255 {
                 // emit too many arguments error
             }
             let constant = parse_variable(parser, compiler, "Expect parameter name.");
@@ -850,34 +849,6 @@ impl Precedence {
             Self::Call => Self::Primary,
             Self::Primary => panic!(),
         }
-    }
-}
-
-struct Take<T> {
-    value: Option<T>,
-}
-
-impl<T> Take<T> {
-    fn new(value: T) -> Self {
-        Self { value: Some(value) }
-    }
-
-    fn take(&mut self) -> Option<T> {
-        self.value.take()
-    }
-}
-
-impl<T> Deref for Take<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.value.as_ref().unwrap()
-    }
-}
-
-impl<T> DerefMut for Take<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.value.as_mut().unwrap()
     }
 }
 

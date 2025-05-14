@@ -6,17 +6,19 @@ use std::rc::Rc;
 
 use crate::error::GravloxError;
 use crate::op::*;
-use crate::value::FunctionPtr;
+use crate::value::Function;
 use crate::value::Value;
+use crate::obj::{make_obj, Obj};
 
 const NULL_FRAME_MSG: &'static str = "Current frame should not be None";
+const FRAMES_MAX: usize = 255;
 
 pub struct GravloxVM {
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
     // The book uses a fixed-size array of CallFrames, but I'm just going to use a vec for now to keep it simple.
-    frames: Vec<CallFramePtr>,
-    current_frame: Option<CallFramePtr>,
+    frames: Vec<Obj<CallFrame>>,
+    current_frame: Option<Obj<CallFrame>>,
 }
 
 impl GravloxVM {
@@ -29,8 +31,8 @@ impl GravloxVM {
         }
     }
 
-    pub fn interpret(&mut self, func: FunctionPtr) -> Result<(), GravloxError> {
-        self.current_frame = Some(self.new_frame_ptr(func));
+    pub fn interpret(&mut self, func: Obj<Function>) -> Result<(), GravloxError> {
+	self.current_frame = Some(make_obj(CallFrame::new(func)));
         self.run()
     }
 
@@ -307,14 +309,6 @@ impl GravloxVM {
         )))
     }
 
-    fn new_frame_ptr(&self, func: FunctionPtr) -> CallFramePtr {
-        Rc::new(RefCell::new(CallFrame {
-            func: func.clone(),
-            ip: func.borrow().chunk().borrow().get_ip(),
-            stack_offset: self.stack.len(),
-        }))
-    }
-
     fn current_frame(&self) -> Ref<CallFrame> {
         self.current_frame.as_ref().expect(NULL_FRAME_MSG).borrow()
     }
@@ -328,15 +322,22 @@ impl GravloxVM {
 }
 
 struct CallFrame {
-    func: FunctionPtr,
+    func: Obj<Function>,
     ip: *const u8,
     stack_offset: usize,
 }
 
-type CallFramePtr = Rc<RefCell<CallFrame>>;
-
 impl CallFrame {
-    pub fn func(&self) -> FunctionPtr {
+    pub fn new(func: Obj<Function>) -> Self {
+        let ip = func.borrow().chunk().borrow().get_ip();
+        Self {
+            func,
+            ip,
+            stack_offset: 0
+        }
+    }
+    
+    pub fn func(&self) -> Obj<Function> {
         self.func.clone()
     }
 }
