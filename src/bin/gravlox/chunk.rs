@@ -319,6 +319,12 @@ impl Display for Chunk {
                     idx += 2;
                     current_line_idx += 2;
                 }
+		OP_CALL => {
+                    let slot = self.code[idx + 1] as usize;
+                    print_byte_instr(f, idx, &line_display, "call", slot)?;
+                    idx += 1;
+                    current_line_idx += 1;
+		}
                 _ => unreachable!(
                     "Unknown opcode while printing chunk: 0x{:02x}",
                     self.code[idx]

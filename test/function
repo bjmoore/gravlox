@@ -2,6 +2,6 @@ fun square(a) {
     return a*a;
 }
 
-a = 5;
+var a = 5;
 a = square(a);
 print a; // expect: 25

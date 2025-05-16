@@ -48,14 +48,20 @@ struct Compiler {
 
 impl Compiler {
     fn new(enclosing: Option<Compiler>, r#type: FunctionType, name: Option<&str>) -> Self {
-        Self {
+        let mut new_compiler = Self {
             function: make_obj(Function::new(name)),
             function_type: r#type,
             locals: [Local::default(); MAX_LOCALS],
             local_count: 0,
             scope_depth: 0,
             enclosing: enclosing.map(|c| Box::new(c)),
-        }
+        };
+
+	new_compiler.locals[0].name = Token::default();
+	new_compiler.locals[0].depth = Some(0);
+	new_compiler.local_count += 1;
+
+	new_compiler
     }
 
     fn end_compiler(&mut self, line_number: u32, _debug: bool) -> Obj<Function> {
@@ -88,6 +94,7 @@ impl Compiler {
     }
 
     fn emit_return(&mut self, line_number: u32) {
+	self.emit_byte(OP_NIL, line_number);
         self.emit_byte(OP_RETURN, line_number);
     }
 
@@ -463,6 +470,25 @@ fn define_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, global: u
     compiler.emit_bytes(OP_DEFINE_GLOBAL, global as u8, parser.line_number());
 }
 
+fn argument_list(parser: &mut Parser, compiler: &mut Take<Compiler>) -> u8 {
+    let mut arg_count = 0;
+    if !parser.check(TokenType::RightParen) {
+        loop {
+            expression(parser, compiler);
+            if arg_count == 255 {
+                // TODO: error because we have too many args
+            }
+            arg_count += 1;
+            if !parser.r#match(TokenType::Comma) {
+                break;
+            }
+        }
+    }
+    parser.consume(TokenType::RightParen, "Expect ')' after arguments.");
+
+    arg_count
+}
+
 fn and(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
     let end_jump = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
 
@@ -499,6 +525,8 @@ fn statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
         compiler.end_scope(parser.line_number());
     } else if parser.r#match(TokenType::If) {
         if_statement(parser, compiler);
+    } else if parser.r#match(TokenType::Return) {
+	return_statement(parser, compiler);
     } else if parser.r#match(TokenType::While) {
         while_statement(parser, compiler);
     } else if parser.r#match(TokenType::For) {
@@ -512,6 +540,16 @@ fn print_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     expression(parser, compiler);
     parser.consume(TokenType::Semicolon, "Expect ';' after value.");
     compiler.emit_byte(OP_PRINT, parser.line_number());
+}
+
+fn return_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    if parser.r#match(TokenType::Semicolon) {
+	compiler.emit_return(parser.line_number());
+    } else {
+	expression(parser, compiler);
+	parser.consume(TokenType::Semicolon, "Expect ';' after return value.");
+	compiler.emit_byte(OP_RETURN, parser.line_number());
+    }
 }
 
 fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
@@ -703,6 +741,11 @@ fn binary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool)
     }
 }
 
+fn call(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+    let arg_count = argument_list(parser, compiler);
+    compiler.emit_bytes(OP_CALL, arg_count, parser.line_number());
+}
+
 fn grouping(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
     expression(parser, compiler);
     parser.consume(TokenType::RightParen, "Expect ')' after expression.");
@@ -791,7 +834,7 @@ enum Precedence {
 fn get_rule(t: TokenType) -> ParseRule {
     #[rustfmt::skip]
     return match t { // Using return here because #[rustfmt::skip] on an expression is an error
-        TokenType::LeftParen    => ParseRule(Some(Box::new(grouping)), None,                   Precedence::None),
+        TokenType::LeftParen    => ParseRule(Some(Box::new(grouping)), Some(Box::new(call)),   Precedence::Call),
         TokenType::RightParen   => ParseRule(None,                     None,                   Precedence::None),
         TokenType::LeftBrace    => ParseRule(None,                     None,                   Precedence::None),
         TokenType::RightBrace   => ParseRule(None,                     None,                   Precedence::None),

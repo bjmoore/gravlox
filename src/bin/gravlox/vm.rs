@@ -1,14 +1,12 @@
-use std::cell::Ref;
 use std::cell::RefCell;
-use std::cell::RefMut;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::error::GravloxError;
+use crate::obj::{make_obj, Obj};
 use crate::op::*;
 use crate::value::Function;
 use crate::value::Value;
-use crate::obj::{make_obj, Obj};
 
 const NULL_FRAME_MSG: &'static str = "Current frame should not be None";
 const FRAMES_MAX: usize = 255;
@@ -17,8 +15,7 @@ pub struct GravloxVM {
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
     // The book uses a fixed-size array of CallFrames, but I'm just going to use a vec for now to keep it simple.
-    frames: Vec<Obj<CallFrame>>,
-    current_frame: Option<Obj<CallFrame>>,
+    frames: Vec<CallFrame>,
 }
 
 impl GravloxVM {
@@ -27,12 +24,12 @@ impl GravloxVM {
             stack: Vec::new(),
             globals: HashMap::new(),
             frames: Vec::new(),
-            current_frame: None,
         }
     }
 
     pub fn interpret(&mut self, func: Obj<Function>) -> Result<(), GravloxError> {
-	self.current_frame = Some(make_obj(CallFrame::new(func)));
+	self.push(Value::FunctionRef(func.clone()));
+        self.call(func, 0);
         self.run()
     }
 
@@ -42,7 +39,16 @@ impl GravloxVM {
 
             match opcode {
                 OP_RETURN => {
-                    return Ok(());
+                    let result = self.pop();
+                    let exiting_frame = self.frames.pop().expect("Call stack underflow");self.current_frame().func().borrow()
+                    if self.frames.len() == 0 {
+			let _main = self.pop();
+                        return Ok(());
+                    }
+
+                    // We saved the stack height before entering this call frame, so reset the stack to that height afterward
+                    self.stack.truncate(exiting_frame.stack_offset);
+		    self.push(result);
                 }
                 OP_CONSTANT => {
                     let const_idx = self.read_byte() as usize;
@@ -235,6 +241,12 @@ impl GravloxVM {
 			         + ((self.read_byte() as usize));
                     self.jump_back(distance);
                 }
+                OP_CALL => {
+                    let arg_count = self.read_byte();
+                    if !self.call_value(self.peek(arg_count as usize), arg_count) {
+                        return self.runtime_error("Error in function call");
+                    }
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }
@@ -248,7 +260,7 @@ impl GravloxVM {
     }
 
     fn read_byte(&mut self) -> u8 {
-        let mut current_frame = self.current_frame_mut();
+        let current_frame = self.current_frame_mut();
         unsafe {
             let ret = *current_frame.ip;
             current_frame.ip = current_frame.ip.add(1);
@@ -268,25 +280,41 @@ impl GravloxVM {
     }
 
     fn jump(&mut self, distance: usize) {
-        let mut current_frame = self.current_frame_mut();
+        let current_frame = self.current_frame_mut();
         unsafe {
             current_frame.ip = current_frame.ip.add(distance);
         }
     }
 
     fn jump_back(&mut self, distance: usize) {
-        let mut current_frame = self.current_frame_mut();
+        let current_frame = self.current_frame_mut();
         unsafe {
             current_frame.ip = current_frame.ip.sub(distance);
         }
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop().expect("Stack underflow")
+        let ret = match self.stack.pop() {
+	    Some(val) => val,
+	    None => {
+		panic!("Stack underflow");
+	    }
+	};
+	print!("pop: ");
+	for v in self.stack.iter() {
+	    print!("{} ", v);
+	}
+	print!("\n");
+	ret
     }
 
     fn push(&mut self, value: Value) {
         self.stack.push(value);
+	print!("push: ");
+	for v in self.stack.iter() {
+	    print!("{} ", v);
+	}
+	print!("\n");
     }
 
     fn peek(&self, depth: usize) -> Value {
@@ -309,15 +337,42 @@ impl GravloxVM {
         )))
     }
 
-    fn current_frame(&self) -> Ref<CallFrame> {
-        self.current_frame.as_ref().expect(NULL_FRAME_MSG).borrow()
+    fn current_frame(&self) -> &CallFrame {
+        self.frames.last().expect(NULL_FRAME_MSG)
     }
 
-    fn current_frame_mut(&self) -> RefMut<CallFrame> {
-        self.current_frame
-            .as_ref()
-            .expect(NULL_FRAME_MSG)
-            .borrow_mut()
+    fn current_frame_mut(&mut self) -> &mut CallFrame {
+        self.frames.last_mut().expect(NULL_FRAME_MSG)
+    }
+
+    fn call_value(&mut self, callee: Value, arg_count: u8) -> bool {
+        match callee {
+            Value::FunctionRef(f) => return self.call(f, arg_count),
+            _ => false, // raise an informative error here
+        }
+    }
+
+    fn call(&mut self, callee: Obj<Function>, arg_count: u8) -> bool {
+        if arg_count as usize != callee.borrow().arity {
+            // Emit error here because of arg count mismatch
+            return false;
+        }
+
+        if self.frames.len() == FRAMES_MAX {
+            // Emit error because we have too much recursion
+            return false;
+        }
+	
+
+        let ip = callee.borrow().chunk().borrow().get_ip();
+        let new_frame = CallFrame {
+            func: callee,
+            ip,
+            stack_offset: self.stack.len() - arg_count as usize - 1,
+        };
+        self.frames.push(new_frame);
+
+        true
     }
 }
 
@@ -333,10 +388,10 @@ impl CallFrame {
         Self {
             func,
             ip,
-            stack_offset: 0
+            stack_offset: 0,
         }
     }
-    
+
     pub fn func(&self) -> Obj<Function> {
         self.func.clone()
     }
