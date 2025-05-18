@@ -1,29 +1,13 @@
 use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
-use crate::error::GravloxError;
+use crate::error::*;
 use crate::op::*;
 use crate::value::Value;
 
 const MAX_CONSTANTS: usize = 2usize.pow(24);
-
-#[derive(Debug)]
-pub struct MaxConstantsError;
-
-impl Error for MaxConstantsError {}
-
-impl Display for MaxConstantsError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Too many constants in a single chunk (maximum: {})",
-            MAX_CONSTANTS
-        )
-    }
-}
 
 pub struct Chunk {
     code: Vec<u8>,
@@ -69,11 +53,9 @@ impl Chunk {
         }
     }
 
-    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<usize, GravloxError> {
+    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<usize, CompileError> {
         if self.constants.len() == MAX_CONSTANTS {
-            return Err(GravloxError::CompileError(
-                "Too many constants in a single chunk.",
-            ));
+            return Err(CompileError::TooManyConstants);
         }
         self.constants.push(value);
         let const_idx = self.constants.len() - 1;

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::chunk::ChunkPtr;
-use crate::error::GravloxError;
+use crate::error::*;
 use crate::lexer::Scanner;
 use crate::obj::{make_obj, Obj};
 use crate::op::*;
@@ -57,11 +57,11 @@ impl Compiler {
             enclosing: enclosing.map(|c| Box::new(c)),
         };
 
-	new_compiler.locals[0].name = Token::default();
-	new_compiler.locals[0].depth = Some(0);
-	new_compiler.local_count += 1;
+        new_compiler.locals[0].name = Token::default();
+        new_compiler.locals[0].depth = Some(0);
+        new_compiler.local_count += 1;
 
-	new_compiler
+        new_compiler
     }
 
     fn end_compiler(&mut self, line_number: u32, _debug: bool) -> Obj<Function> {
@@ -94,11 +94,11 @@ impl Compiler {
     }
 
     fn emit_return(&mut self, line_number: u32) {
-	self.emit_byte(OP_NIL, line_number);
+        self.emit_byte(OP_NIL, line_number);
         self.emit_byte(OP_RETURN, line_number);
     }
 
-    fn emit_constant(&mut self, value: Value, line_number: u32) -> Result<usize, GravloxError> {
+    fn emit_constant(&mut self, value: Value, line_number: u32) -> Result<usize, CompileError> {
         let const_idx = self
             .current_chunk()
             .borrow_mut()
@@ -136,11 +136,11 @@ impl Compiler {
         self.current_chunk().borrow().count() - 2
     }
 
-    fn patch_jump(&mut self, offset: usize) -> Result<(), GravloxError> {
+    fn patch_jump(&mut self, offset: usize) -> Result<(), CompileError> {
         let jump = self.current_chunk().borrow().count() - offset - 2;
 
         if jump > u16::MAX.into() {
-            return Err(GravloxError::CompileError("Too much code to jump."));
+            return Err(CompileError::JumpTooLong);
         }
 
         self.current_chunk()
@@ -153,12 +153,12 @@ impl Compiler {
         Ok(())
     }
 
-    fn emit_loop(&mut self, location: usize, line_number: u32) -> Result<(), GravloxError> {
+    fn emit_loop(&mut self, location: usize, line_number: u32) -> Result<(), CompileError> {
         self.emit_byte(OP_LOOP, line_number);
 
         let offset = self.current_chunk().borrow().count() - location + 2; // +2 because while processing this jump, we will advance ip by 2
         if offset > u16::MAX.into() {
-            return Err(GravloxError::CompileError("Loop body too long."));
+            return Err(CompileError::LoopTooLong);
         }
 
         self.emit_byte((offset >> 8) as u8, line_number);
@@ -167,9 +167,9 @@ impl Compiler {
         Ok(())
     }
 
-    fn add_local(&mut self, name: Token) -> Result<(), GravloxError> {
+    fn add_local(&mut self, name: Token) -> Result<(), CompileError> {
         if self.local_count == MAX_LOCALS {
-            return Err(GravloxError::CompileError("Too many local variables"));
+            return Err(CompileError::TooManyLocals);
         }
 
         let local = &mut self.locals[self.local_count];
@@ -295,19 +295,20 @@ impl Parser {
         self.current.t == t
     }
 
-    fn consume(&mut self, t: TokenType, message: &'static str) {
+    fn consume(&mut self, t: TokenType, message: &'static str) -> Result<(), CompileError> {
         if self.current.t == t {
             self.advance();
+            Ok(())
         } else {
-            self.error_at(self.current, GravloxError::CompileError(message));
+            Err(CompileError::UnexpectedToken(message))
         }
     }
 
-    fn error(&mut self, err: GravloxError) {
+    fn error(&mut self, err: CompileError) {
         self.error_at(self.previous, err);
     }
 
-    fn error_at(&mut self, token: Token, err: GravloxError) {
+    fn error_at(&mut self, token: Token, err: CompileError) {
         if self.panic_mode {
             return;
         }
@@ -334,18 +335,15 @@ impl Parser {
     }
 }
 
-fn parse_precedence(parser: &mut Parser, compiler: &mut Take<Compiler>, precedence: Precedence) {
+fn parse_precedence(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    precedence: Precedence,
+) -> Result<(), CompileError> {
     parser.advance();
-    let mut prefix_rule = match get_rule(parser.previous.t).0 {
-        Some(rule) => rule,
-        None => {
-            parser.error_at(
-                parser.previous,
-                GravloxError::CompileError("Expect expression."),
-            );
-            return;
-        }
-    };
+    let mut prefix_rule = get_rule(parser.previous.t)
+        .0
+        .ok_or(CompileError::ExpectedExpression)?;
 
     let assignable = precedence <= Precedence::Assignment;
     prefix_rule(parser, compiler, assignable);
@@ -354,38 +352,36 @@ fn parse_precedence(parser: &mut Parser, compiler: &mut Take<Compiler>, preceden
         parser.advance();
         let infix_rule = get_rule(parser.previous.t).1;
         match infix_rule {
-            Some(mut rule) => rule(parser, compiler, assignable),
+            Some(mut rule) => rule(parser, compiler, assignable)?,
             None => (),
         }
     }
 
     if assignable && parser.r#match(TokenType::Equal) {
-        parser.error_at(
-            parser.previous,
-            GravloxError::CompileError("Invalid assignment target"),
-        );
+        return Err(CompileError::InvalidAssignment);
     }
+
+    Ok(())
 }
 
 fn declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
-    if parser.r#match(TokenType::Fun) {
-        fun_declaration(parser, compiler);
+    if let Err(err) = if parser.r#match(TokenType::Fun) {
+        fun_declaration(parser, compiler)
     } else if parser.r#match(TokenType::Var) {
-        var_declaration(parser, compiler);
+        var_declaration(parser, compiler)
     } else {
-        statement(parser, compiler);
-    }
-
-    if parser.panic_mode {
+        statement(parser, compiler)
+    } {
+        parser.error(err);
         parser.synchronize();
     }
 }
 
-fn var_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
-    let global = parse_variable(parser, compiler, "Expect variable name.");
+fn var_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
+    let global = parse_variable(parser, compiler, "Expect variable name.")?;
 
     if parser.r#match(TokenType::Equal) {
-        expression(parser, compiler);
+        expression(parser, compiler)?;
     } else {
         compiler.emit_byte(OP_NIL, parser.line_number());
     }
@@ -393,29 +389,34 @@ fn var_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     parser.consume(
         TokenType::Semicolon,
         "Expect ';' after variable declaration.",
-    );
+    )?;
 
     define_variable(parser, compiler, global);
+
+    Ok(())
 }
 
 fn parse_variable(
     parser: &mut Parser,
     compiler: &mut Take<Compiler>,
     message: &'static str,
-) -> usize {
-    parser.consume(TokenType::Identifier, message);
+) -> Result<usize, CompileError> {
+    parser.consume(TokenType::Identifier, message)?;
 
     declare_variable(parser, compiler);
     if compiler.scope_depth > 0 {
-        return 0;
+        return Ok(0);
     }
 
     identifier_constant(parser, compiler)
 }
 
-fn declare_variable(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn declare_variable(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+) -> Result<(), CompileError> {
     if compiler.scope_depth == 0 {
-        return;
+        return Ok(());
     }
 
     let name = parser.previous;
@@ -428,18 +429,17 @@ fn declare_variable(parser: &mut Parser, compiler: &mut Take<Compiler>) {
         }
 
         if identifiers_equal(parser, name, local.name) {
-            parser.error_at(
-                parser.previous,
-                GravloxError::CompileError("Variable already defined in this scope."),
-            );
+            return Err(CompileError::AlreadyDefined);
         }
     }
-    compiler
-        .add_local(name)
-        .inspect_err(|e| parser.error(e.clone()));
+
+    compiler.add_local(name)
 }
 
-fn identifier_constant(parser: &mut Parser, compiler: &mut Take<Compiler>) -> usize {
+fn identifier_constant(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+) -> Result<usize, CompileError> {
     let name = parser.lexeme();
     let heap_obj = Rc::new(RefCell::new(name.to_owned()));
     let line = parser.previous.line;
@@ -447,10 +447,6 @@ fn identifier_constant(parser: &mut Parser, compiler: &mut Take<Compiler>) -> us
         .current_chunk()
         .borrow_mut()
         .add_constant(Value::StringRef(heap_obj), line)
-        .unwrap_or_else(|e| {
-            parser.error_at(parser.previous, e);
-            0
-        })
 }
 
 fn identifiers_equal(parser: &Parser, a: Token, b: Token) -> bool {
@@ -489,70 +485,76 @@ fn argument_list(parser: &mut Parser, compiler: &mut Take<Compiler>) -> u8 {
     arg_count
 }
 
-fn and(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn and(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let end_jump = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
 
     compiler.emit_byte(OP_POP, parser.line_number());
-    parse_precedence(parser, compiler, Precedence::And);
+    parse_precedence(parser, compiler, Precedence::And)?;
 
-    compiler
-        .patch_jump(end_jump)
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.patch_jump(end_jump)
 }
 
-fn or(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn or(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let else_jump = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
     let end_jump = compiler.emit_jump(OP_JUMP, parser.line_number());
 
-    compiler
-        .patch_jump(else_jump)
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.patch_jump(else_jump)?;
 
     compiler.emit_byte(OP_POP, parser.line_number());
     parse_precedence(parser, compiler, Precedence::Or);
 
-    compiler
-        .patch_jump(end_jump)
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.patch_jump(end_jump)
 }
 
-fn statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     if parser.r#match(TokenType::Print) {
-        print_statement(parser, compiler);
+        print_statement(parser, compiler)
     } else if parser.r#match(TokenType::LeftBrace) {
         compiler.begin_scope();
-        block(parser, compiler);
+        block(parser, compiler)?;
         compiler.end_scope(parser.line_number());
+	Ok(())
     } else if parser.r#match(TokenType::If) {
-        if_statement(parser, compiler);
+        if_statement(parser, compiler)
     } else if parser.r#match(TokenType::Return) {
-	return_statement(parser, compiler);
+        return_statement(parser, compiler)
     } else if parser.r#match(TokenType::While) {
-        while_statement(parser, compiler);
+        while_statement(parser, compiler)
     } else if parser.r#match(TokenType::For) {
-        for_statement(parser, compiler);
+        for_statement(parser, compiler)
     } else {
-        expression_statement(parser, compiler);
+        expression_statement(parser, compiler)
     }
 }
 
-fn print_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn print_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     expression(parser, compiler);
     parser.consume(TokenType::Semicolon, "Expect ';' after value.");
     compiler.emit_byte(OP_PRINT, parser.line_number());
+    Ok(())
 }
 
-fn return_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn return_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     if parser.r#match(TokenType::Semicolon) {
-	compiler.emit_return(parser.line_number());
+        compiler.emit_return(parser.line_number());
     } else {
-	expression(parser, compiler);
-	parser.consume(TokenType::Semicolon, "Expect ';' after return value.");
-	compiler.emit_byte(OP_RETURN, parser.line_number());
+        expression(parser, compiler);
+        parser.consume(TokenType::Semicolon, "Expect ';' after return value.");
+        compiler.emit_byte(OP_RETURN, parser.line_number());
     }
+
+    Ok(())
 }
 
-fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
     expression(parser, compiler);
     parser.consume(TokenType::RightParen, "Expect ')' after condition.");
@@ -564,21 +566,17 @@ fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
 
     let else_jump = compiler.emit_jump(OP_JUMP, parser.line_number());
 
-    compiler
-        .patch_jump(then_jump)
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.patch_jump(then_jump)?;
 
     compiler.emit_byte(OP_POP, parser.line_number());
     if parser.r#match(TokenType::Else) {
         statement(parser, compiler);
     }
 
-    compiler
-        .patch_jump(else_jump)
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.patch_jump(else_jump)
 }
 
-fn while_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn while_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     let loop_start = compiler.current_chunk().borrow().count();
 
     parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
@@ -589,17 +587,15 @@ fn while_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     compiler.emit_byte(OP_POP, parser.line_number());
 
     statement(parser, compiler);
-    compiler
-        .emit_loop(loop_start, parser.line_number())
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.emit_loop(loop_start, parser.line_number())?;
 
-    compiler
-        .patch_jump(exit_loop)
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.patch_jump(exit_loop)?;
     compiler.emit_byte(OP_POP, parser.line_number());
+
+    Ok(())
 }
 
-fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     compiler.begin_scope();
     parser.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
 
@@ -634,82 +630,84 @@ fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
             TokenType::RightParen,
             "Expect ')' after for loop increment.",
         );
-        compiler
-            .emit_loop(loop_start, parser.line_number())
-            .inspect_err(|e| parser.error(e.clone()));
+        compiler.emit_loop(loop_start, parser.line_number())?;
         loop_start = increment_start;
-        compiler
-            .patch_jump(body_jump)
-            .inspect_err(|e| parser.error(e.clone()));
+        compiler.patch_jump(body_jump)?;
     }
 
     statement(parser, compiler);
 
-    compiler
-        .emit_loop(loop_start, parser.line_number())
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.emit_loop(loop_start, parser.line_number())?;
     if let Some(exit_jump) = exit_jump {
-        compiler
-            .patch_jump(exit_jump)
-            .inspect_err(|e| parser.error(e.clone()));
+        compiler.patch_jump(exit_jump)?;
     }
     compiler.emit_byte(OP_POP, parser.line_number());
     compiler.end_scope(parser.line_number());
+
+    Ok(())
 }
 
-fn expression_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn expression_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     expression(parser, compiler);
     parser.consume(TokenType::Semicolon, "Expect ';' after expression.");
     compiler.emit_byte(OP_POP, parser.line_number());
+    Ok(())
 }
 
-fn block(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+fn block(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     while !(parser.current.t == TokenType::RightBrace) && !(parser.current.t == TokenType::Eof) {
         declaration(parser, compiler);
     }
 
-    parser.consume(TokenType::RightBrace, "Expect '}' after block.");
+    parser.consume(TokenType::RightBrace, "Expect '}' after block.")
 }
 
-fn fun_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
-    let global = parse_variable(parser, compiler, "Expect variable name.");
+fn fun_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
+    let global = parse_variable(parser, compiler, "Expect variable name.")?;
     compiler.mark_initialized();
-    function(parser, compiler, FunctionType::Function);
+    function(parser, compiler, FunctionType::Function)?;
     define_variable(parser, compiler, global);
+    Ok(())
 }
 
-fn function(parser: &mut Parser, compiler: &mut Take<Compiler>, function_type: FunctionType) {
+fn function(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    function_type: FunctionType,
+) -> Result<(), CompileError> {
     compiler.push_compiler(function_type, Some(parser.lexer.lexeme(parser.previous)));
     compiler.begin_scope();
 
-    parser.consume(TokenType::LeftParen, "Expect '(' after function name.");
+    parser.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
     if !parser.check(TokenType::RightParen) {
         loop {
             compiler.function.borrow_mut().arity += 1;
             if compiler.function.borrow().arity > 255 {
                 // emit too many arguments error
             }
-            let constant = parse_variable(parser, compiler, "Expect parameter name.");
+            let constant = parse_variable(parser, compiler, "Expect parameter name.")?;
             define_variable(parser, compiler, constant);
             if !parser.r#match(TokenType::Comma) {
                 break;
             }
         }
     }
-    parser.consume(TokenType::RightParen, "Expect ')' after function name.");
-    parser.consume(TokenType::LeftBrace, "Expect '{' before function body.");
-    block(parser, compiler);
+    parser.consume(TokenType::RightParen, "Expect ')' after function name.")?;
+    parser.consume(TokenType::LeftBrace, "Expect '{' before function body.")?;
+    block(parser, compiler)?;
 
     let func = compiler.end_compiler(parser.line_number(), false);
     compiler.pop_compiler();
-    compiler.emit_constant(Value::FunctionRef(func), parser.line_number());
+    compiler
+        .emit_constant(Value::FunctionRef(func), parser.line_number())
+        .map(|_| ())
 }
 
-fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) {
-    parse_precedence(parser, compiler, Precedence::Assignment);
+fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
+    parse_precedence(parser, compiler, Precedence::Assignment)
 }
 
-fn unary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn unary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
     let operator_type = parser.previous.t;
 
     parse_precedence(parser, compiler, Precedence::Unary);
@@ -719,12 +717,14 @@ fn unary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) 
         TokenType::Minus => compiler.emit_byte(OP_NEGATE, parser.line_number()),
         _ => unreachable!(),
     }
+
+    Ok(())
 }
 
-fn binary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn binary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
     let operator_type = parser.previous.t;
     let parse_rule = get_rule(operator_type);
-    parse_precedence(parser, compiler, parse_rule.2.plus_one());
+    parse_precedence(parser, compiler, parse_rule.2.plus_one())?;
 
     match operator_type {
         TokenType::Plus => compiler.emit_byte(OP_ADD, parser.line_number()),
@@ -739,27 +739,28 @@ fn binary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool)
         TokenType::LessEqual => compiler.emit_bytes(OP_LESS, OP_NOT, parser.line_number()),
         _ => unreachable!(),
     }
+
+    Ok(())
 }
 
-fn call(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn call(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
     let arg_count = argument_list(parser, compiler);
     compiler.emit_bytes(OP_CALL, arg_count, parser.line_number());
+    Ok(())
 }
 
-fn grouping(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn grouping(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
     expression(parser, compiler);
-    parser.consume(TokenType::RightParen, "Expect ')' after expression.");
+    parser.consume(TokenType::RightParen, "Expect ')' after expression.")
 }
 
-fn number(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn number(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
     let lexeme = parser.lexer.lexeme(parser.previous);
     let number = lexeme.parse::<f64>().unwrap();
-    compiler
-        .emit_constant(Value::Number(number), parser.line_number())
-        .inspect_err(|e| parser.error(e.clone()));
+    compiler.emit_constant(Value::Number(number), parser.line_number()).map(|_| ())
 }
 
-fn literal(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn literal(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
     let operator_type = parser.previous.t;
 
     match operator_type {
@@ -768,25 +769,35 @@ fn literal(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool
         TokenType::False => compiler.emit_byte(OP_FALSE, parser.line_number()),
         _ => unreachable!(),
     }
+
+    Ok(())
 }
 
-fn string(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) {
+fn string(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let str_value = parser.lexer.string_lexeme(parser.previous);
     let heap_obj = Rc::new(RefCell::new(str_value.to_owned()));
     compiler
         .emit_constant(Value::StringRef(heap_obj), parser.line_number())
-        .inspect_err(|e| parser.error(e.clone()));
+        .map(|_| ())
 }
 
-fn variable(parser: &mut Parser, compiler: &mut Take<Compiler>, assignable: bool) {
-    named_variable(parser, compiler, assignable);
+fn variable(parser: &mut Parser, compiler: &mut Take<Compiler>, assignable: bool) -> Result<(), CompileError> {
+    named_variable(parser, compiler, assignable)
 }
 
-fn named_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, assignable: bool) {
+fn named_variable(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    assignable: bool,
+) -> Result<(), CompileError> {
     let (get_op, set_op, arg) = match resolve_local(parser, compiler) {
         Some(arg) => (OP_GET_LOCAL, OP_SET_LOCAL, arg),
         None => {
-            let arg = identifier_constant(parser, compiler) as u8;
+            let arg = identifier_constant(parser, compiler)? as u8;
             (OP_GET_GLOBAL, OP_SET_GLOBAL, arg)
         }
     };
@@ -797,6 +808,8 @@ fn named_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, assignable
     } else {
         compiler.emit_bytes(get_op, arg, parser.line_number());
     }
+
+    Ok(())
 }
 
 fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<u8> {
@@ -811,8 +824,8 @@ fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<u
 }
 
 struct ParseRule(
-    Option<Box<dyn FnMut(&mut Parser, &mut Take<Compiler>, bool)>>,
-    Option<Box<dyn FnMut(&mut Parser, &mut Take<Compiler>, bool)>>,
+    Option<Box<dyn FnMut(&mut Parser, &mut Take<Compiler>, bool) -> Result<(), CompileError>>>,
+    Option<Box<dyn FnMut(&mut Parser, &mut Take<Compiler>, bool) -> Result<(), CompileError>>>,
     Precedence,
 );
 

@@ -1,4 +1,4 @@
-use crate::error::GravloxError;
+use crate::error::*;
 use crate::token::Token;
 use crate::token::TokenType;
 pub struct Scanner {
@@ -26,7 +26,7 @@ impl Scanner {
         &self.source[token.start + 1..(token.start + token.len - 1)]
     }
 
-    pub fn next_token(&mut self) -> Result<Token, GravloxError> {
+    pub fn next_token(&mut self) -> Result<Token, CompileError> {
         self.skip_whitespace();
         self.start = self.current;
 
@@ -77,7 +77,7 @@ impl Scanner {
             '"' => self.string(),
             '0'..='9' => self.number(),
             'a'..='z' | 'A'..='Z' | '_' => self.identifier(),
-            _ => self.error_token("Unexpected character."),
+            c => Err(CompileError::UnexpectedCharacter(c))
         }
     }
 
@@ -143,7 +143,7 @@ impl Scanner {
         true
     }
 
-    fn make_token(&self, token_type: TokenType) -> Result<Token, GravloxError> {
+    fn make_token(&self, token_type: TokenType) -> Result<Token, CompileError>  {
         Ok(Token::new(
             token_type,
             self.start,
@@ -156,7 +156,7 @@ impl Scanner {
         Err(GravloxError::CompileError(message))
     }
 
-    fn string(&mut self) -> Result<Token, GravloxError> {
+    fn string(&mut self) -> Result<Token, CompileError> {
         while self.peek_char() != '"' && !self.is_end() {
             let next_char = self.next_char();
             if next_char == '\n' {
@@ -165,7 +165,7 @@ impl Scanner {
         }
 
         if self.is_end() {
-            return self.error_token("Unterminated string.");
+            return Err(CompileError::UnterminatedString)
         }
 
         // Consume the closing quote.
@@ -173,7 +173,7 @@ impl Scanner {
         self.make_token(TokenType::String)
     }
 
-    fn number(&mut self) -> Result<Token, GravloxError> {
+    fn number(&mut self) -> Result<Token, CompileError> {
         while self.peek_char().is_ascii_digit() {
             let _ = self.next_char();
         }
@@ -189,7 +189,7 @@ impl Scanner {
         self.make_token(TokenType::Number)
     }
 
-    fn identifier(&mut self) -> Result<Token, GravloxError> {
+    fn identifier(&mut self) -> Result<Token, CompileError> {
         while self.peek_char().is_ascii_alphanumeric() || self.peek_char() == '_' {
             let _ = self.next_char();
         }

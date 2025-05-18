@@ -28,7 +28,7 @@ impl GravloxVM {
     }
 
     pub fn interpret(&mut self, func: Obj<Function>) -> Result<(), GravloxError> {
-	self.push(Value::FunctionRef(func.clone()));
+        self.push(Value::FunctionRef(func.clone()));
         self.call(func, 0);
         self.run()
     }
@@ -42,13 +42,13 @@ impl GravloxVM {
                     let result = self.pop();
                     let exiting_frame = self.frames.pop().expect("Call stack underflow");
                     if self.frames.len() == 0 {
-			let _main = self.pop();
+                        let _main = self.pop();
                         return Ok(());
                     }
 
                     // We saved the stack height before entering this call frame, so reset the stack to that height afterward
                     self.stack.truncate(exiting_frame.stack_offset);
-		    self.push(result);
+                    self.push(result);
                 }
                 OP_CONSTANT => {
                     let const_idx = self.read_byte() as usize;
@@ -294,27 +294,16 @@ impl GravloxVM {
     }
 
     fn pop(&mut self) -> Value {
-        let ret = match self.stack.pop() {
-	    Some(val) => val,
-	    None => {
-		panic!("Stack underflow");
-	    }
-	};
-	print!("pop: ");
-	for v in self.stack.iter() {
-	    print!("{} ", v);
-	}
-	print!("\n");
-	ret
+        match self.stack.pop() {
+            Some(val) => val,
+            None => {
+                panic!("Stack underflow");
+            }
+        }
     }
 
     fn push(&mut self, value: Value) {
         self.stack.push(value);
-	print!("push: ");
-	for v in self.stack.iter() {
-	    print!("{} ", v);
-	}
-	print!("\n");
     }
 
     fn peek(&self, depth: usize) -> Value {
@@ -362,7 +351,6 @@ impl GravloxVM {
             // Emit error because we have too much recursion
             return false;
         }
-	
 
         let ip = callee.borrow().chunk().borrow().get_ip();
         let new_frame = CallFrame {
