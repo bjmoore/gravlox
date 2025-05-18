@@ -36,7 +36,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             let line = line.unwrap();
             if expectations[0] != line {
                 passing = false;
-                failed_expectations.push(format!("Expected: {}, Actual: {}", expectations[0], line));
+                failed_expectations
+                    .push(format!("Expected: {}, Actual: {}", expectations[0], line));
             } else {
                 expectations.pop_front();
             }

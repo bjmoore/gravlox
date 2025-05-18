@@ -46,7 +46,7 @@ pub enum TokenType {
     Eof,
 
     #[default]
-    Null
+    Null,
 }
 
 #[derive(Debug, Clone, Copy, Default)]

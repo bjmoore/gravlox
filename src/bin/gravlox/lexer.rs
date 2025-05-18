@@ -77,7 +77,7 @@ impl Scanner {
             '"' => self.string(),
             '0'..='9' => self.number(),
             'a'..='z' | 'A'..='Z' | '_' => self.identifier(),
-            c => Err(CompileError::UnexpectedCharacter(c))
+            c => Err(CompileError::UnexpectedCharacter(c)),
         }
     }
 
@@ -143,7 +143,7 @@ impl Scanner {
         true
     }
 
-    fn make_token(&self, token_type: TokenType) -> Result<Token, CompileError>  {
+    fn make_token(&self, token_type: TokenType) -> Result<Token, CompileError> {
         Ok(Token::new(
             token_type,
             self.start,
@@ -165,7 +165,7 @@ impl Scanner {
         }
 
         if self.is_end() {
-            return Err(CompileError::UnterminatedString)
+            return Err(CompileError::UnterminatedString);
         }
 
         // Consume the closing quote.
