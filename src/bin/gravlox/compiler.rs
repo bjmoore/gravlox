@@ -358,6 +358,9 @@ fn parse_precedence(
 }
 
 fn declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
+    // I would never approve this syntax in a code review, but
+    // it's my project and I'm going to have fun with it
+    
     if let Err(err) = if parser.r#match(TokenType::Fun) {
         fun_declaration(parser, compiler)
     } else if parser.r#match(TokenType::Var) {
