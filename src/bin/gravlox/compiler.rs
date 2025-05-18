@@ -13,14 +13,7 @@ use crate::value::Function;
 use crate::value::Value;
 
 pub fn compile(source: String, debug: bool) -> Option<Obj<Function>> {
-    let mut parser = Parser {
-        current: Token::default(),
-        previous: Token::default(),
-        lexer: Scanner::new(source),
-        had_error: false,
-        panic_mode: false,
-    };
-
+    let mut parser = Parser::new(source);
     let mut compiler = Take::new(Compiler::new(None, FunctionType::Script, Some("<root>")));
 
     parser.advance();
