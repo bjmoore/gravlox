@@ -40,7 +40,7 @@ impl GravloxVM {
             match opcode {
                 OP_RETURN => {
                     let result = self.pop();
-                    let exiting_frame = self.frames.pop().expect("Call stack underflow");self.current_frame().func().borrow()
+                    let exiting_frame = self.frames.pop().expect("Call stack underflow");
                     if self.frames.len() == 0 {
 			let _main = self.pop();
                         return Ok(());
