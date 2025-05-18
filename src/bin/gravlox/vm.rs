@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::error::GravloxError;
-use crate::obj::{make_obj, Obj};
+use crate::obj::Obj;
 use crate::op::*;
 use crate::value::Function;
 use crate::value::Value;
@@ -371,15 +371,6 @@ struct CallFrame {
 }
 
 impl CallFrame {
-    pub fn new(func: Obj<Function>) -> Self {
-        let ip = func.borrow().chunk().borrow().get_ip();
-        Self {
-            func,
-            ip,
-            stack_offset: 0,
-        }
-    }
-
     pub fn func(&self) -> Obj<Function> {
         self.func.clone()
     }

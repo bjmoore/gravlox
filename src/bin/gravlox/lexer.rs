@@ -152,10 +152,6 @@ impl Scanner {
         ))
     }
 
-    fn error_token(&self, message: &'static str) -> Result<Token, GravloxError> {
-        Err(GravloxError::CompileError(message))
-    }
-
     fn string(&mut self) -> Result<Token, CompileError> {
         while self.peek_char() != '"' && !self.is_end() {
             let next_char = self.next_char();

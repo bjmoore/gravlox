@@ -53,7 +53,7 @@ impl Chunk {
         }
     }
 
-    pub fn add_constant(&mut self, value: Value, line_number: u32) -> Result<usize, CompileError> {
+    pub fn add_constant(&mut self, value: Value) -> Result<usize, CompileError> {
         if self.constants.len() == MAX_CONSTANTS {
             return Err(CompileError::TooManyConstants);
         }

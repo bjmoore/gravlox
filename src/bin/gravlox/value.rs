@@ -1,9 +1,7 @@
 use crate::chunk::Chunk;
 use crate::chunk::ChunkPtr;
 use crate::obj::{make_obj, Obj};
-use std::cell::RefCell;
 use std::fmt::Display;
-use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum Value {

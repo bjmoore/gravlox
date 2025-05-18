@@ -92,10 +92,7 @@ impl Compiler {
     }
 
     fn emit_constant(&mut self, value: Value, line_number: u32) -> Result<usize, CompileError> {
-        let const_idx = self
-            .current_chunk()
-            .borrow_mut()
-            .add_constant(value, line_number)?;
+        let const_idx = self.current_chunk().borrow_mut().add_constant(value)?;
 
         if const_idx < 256 {
             self.current_chunk()
@@ -339,7 +336,7 @@ fn parse_precedence(
         .ok_or(CompileError::ExpectedExpression)?;
 
     let assignable = precedence <= Precedence::Assignment;
-    prefix_rule(parser, compiler, assignable);
+    prefix_rule(parser, compiler, assignable)?;
 
     while precedence < get_rule(parser.current.t).2 {
         parser.advance();
@@ -399,7 +396,7 @@ fn parse_variable(
 ) -> Result<usize, CompileError> {
     parser.consume(TokenType::Identifier, message)?;
 
-    declare_variable(parser, compiler);
+    declare_variable(parser, compiler)?;
     if compiler.scope_depth > 0 {
         return Ok(0);
     }
@@ -438,11 +435,10 @@ fn identifier_constant(
 ) -> Result<usize, CompileError> {
     let name = parser.lexeme();
     let heap_obj = Rc::new(RefCell::new(name.to_owned()));
-    let line = parser.previous.line;
     compiler
         .current_chunk()
         .borrow_mut()
-        .add_constant(Value::StringRef(heap_obj), line)
+        .add_constant(Value::StringRef(heap_obj))
 }
 
 fn identifiers_equal(parser: &Parser, a: Token, b: Token) -> bool {
@@ -462,11 +458,11 @@ fn define_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, global: u
     compiler.emit_bytes(OP_DEFINE_GLOBAL, global as u8, parser.line_number());
 }
 
-fn argument_list(parser: &mut Parser, compiler: &mut Take<Compiler>) -> u8 {
+fn argument_list(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<u8, CompileError> {
     let mut arg_count = 0;
     if !parser.check(TokenType::RightParen) {
         loop {
-            expression(parser, compiler);
+            expression(parser, compiler)?;
             if arg_count == 255 {
                 // TODO: error because we have too many args
             }
@@ -476,9 +472,9 @@ fn argument_list(parser: &mut Parser, compiler: &mut Take<Compiler>) -> u8 {
             }
         }
     }
-    parser.consume(TokenType::RightParen, "Expect ')' after arguments.");
+    parser.consume(TokenType::RightParen, "Expect ')' after arguments.")?;
 
-    arg_count
+    Ok(arg_count)
 }
 
 fn and(
@@ -505,7 +501,7 @@ fn or(
     compiler.patch_jump(else_jump)?;
 
     compiler.emit_byte(OP_POP, parser.line_number());
-    parse_precedence(parser, compiler, Precedence::Or);
+    parse_precedence(parser, compiler, Precedence::Or)?;
 
     compiler.patch_jump(end_jump)
 }
@@ -532,8 +528,8 @@ fn statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), C
 }
 
 fn print_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
-    expression(parser, compiler);
-    parser.consume(TokenType::Semicolon, "Expect ';' after value.");
+    expression(parser, compiler)?;
+    parser.consume(TokenType::Semicolon, "Expect ';' after value.")?;
     compiler.emit_byte(OP_PRINT, parser.line_number());
     Ok(())
 }
@@ -545,8 +541,8 @@ fn return_statement(
     if parser.r#match(TokenType::Semicolon) {
         compiler.emit_return(parser.line_number());
     } else {
-        expression(parser, compiler);
-        parser.consume(TokenType::Semicolon, "Expect ';' after return value.");
+        expression(parser, compiler)?;
+        parser.consume(TokenType::Semicolon, "Expect ';' after return value.")?;
         compiler.emit_byte(OP_RETURN, parser.line_number());
     }
 
@@ -554,14 +550,14 @@ fn return_statement(
 }
 
 fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
-    parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
-    expression(parser, compiler);
-    parser.consume(TokenType::RightParen, "Expect ')' after condition.");
+    parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+    expression(parser, compiler)?;
+    parser.consume(TokenType::RightParen, "Expect ')' after condition.")?;
 
     let then_jump = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
 
     compiler.emit_byte(OP_POP, parser.line_number());
-    statement(parser, compiler);
+    statement(parser, compiler)?;
 
     let else_jump = compiler.emit_jump(OP_JUMP, parser.line_number());
 
@@ -569,7 +565,7 @@ fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<()
 
     compiler.emit_byte(OP_POP, parser.line_number());
     if parser.r#match(TokenType::Else) {
-        statement(parser, compiler);
+        statement(parser, compiler)?;
     }
 
     compiler.patch_jump(else_jump)
@@ -578,14 +574,14 @@ fn if_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<()
 fn while_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     let loop_start = compiler.current_chunk().borrow().count();
 
-    parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
-    expression(parser, compiler);
-    parser.consume(TokenType::RightParen, "Expect ')' after condition.");
+    parser.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+    expression(parser, compiler)?;
+    parser.consume(TokenType::RightParen, "Expect ')' after condition.")?;
 
     let exit_loop = compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number());
     compiler.emit_byte(OP_POP, parser.line_number());
 
-    statement(parser, compiler);
+    statement(parser, compiler)?;
     compiler.emit_loop(loop_start, parser.line_number())?;
 
     compiler.patch_jump(exit_loop)?;
@@ -596,15 +592,15 @@ fn while_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result
 
 fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
     compiler.begin_scope();
-    parser.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
+    parser.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
 
     // initializer
     if parser.r#match(TokenType::Semicolon) {
         // No initializer.
     } else if parser.r#match(TokenType::Var) {
-        var_declaration(parser, compiler);
+        var_declaration(parser, compiler)?;
     } else {
-        expression_statement(parser, compiler);
+        expression_statement(parser, compiler)?;
     }
 
     let mut loop_start = compiler.current_chunk().borrow().count();
@@ -612,8 +608,8 @@ fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(
 
     // condition
     if !parser.r#match(TokenType::Semicolon) {
-        expression(parser, compiler);
-        parser.consume(TokenType::Semicolon, "Expect ';' after for loop condition.");
+        expression(parser, compiler)?;
+        parser.consume(TokenType::Semicolon, "Expect ';' after for loop condition.")?;
 
         exit_jump = Some(compiler.emit_jump(OP_JUMP_IF_FALSE, parser.line_number()));
         compiler.emit_byte(OP_POP, parser.line_number());
@@ -623,18 +619,18 @@ fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(
     if !parser.r#match(TokenType::RightParen) {
         let body_jump = compiler.emit_jump(OP_JUMP, parser.line_number());
         let increment_start = compiler.current_chunk().borrow().count();
-        expression(parser, compiler);
+        expression(parser, compiler)?;
         compiler.emit_byte(OP_POP, parser.line_number());
         parser.consume(
             TokenType::RightParen,
             "Expect ')' after for loop increment.",
-        );
+        )?;
         compiler.emit_loop(loop_start, parser.line_number())?;
         loop_start = increment_start;
         compiler.patch_jump(body_jump)?;
     }
 
-    statement(parser, compiler);
+    statement(parser, compiler)?;
 
     compiler.emit_loop(loop_start, parser.line_number())?;
     if let Some(exit_jump) = exit_jump {
@@ -650,8 +646,8 @@ fn expression_statement(
     parser: &mut Parser,
     compiler: &mut Take<Compiler>,
 ) -> Result<(), CompileError> {
-    expression(parser, compiler);
-    parser.consume(TokenType::Semicolon, "Expect ';' after expression.");
+    expression(parser, compiler)?;
+    parser.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
     compiler.emit_byte(OP_POP, parser.line_number());
     Ok(())
 }
@@ -716,7 +712,7 @@ fn unary(
 ) -> Result<(), CompileError> {
     let operator_type = parser.previous.t;
 
-    parse_precedence(parser, compiler, Precedence::Unary);
+    parse_precedence(parser, compiler, Precedence::Unary)?;
 
     match operator_type {
         TokenType::Bang => compiler.emit_byte(OP_NOT, parser.line_number()),
@@ -758,7 +754,7 @@ fn call(
     compiler: &mut Take<Compiler>,
     _assignable: bool,
 ) -> Result<(), CompileError> {
-    let arg_count = argument_list(parser, compiler);
+    let arg_count = argument_list(parser, compiler)?;
     compiler.emit_bytes(OP_CALL, arg_count, parser.line_number());
     Ok(())
 }
@@ -768,7 +764,7 @@ fn grouping(
     compiler: &mut Take<Compiler>,
     _assignable: bool,
 ) -> Result<(), CompileError> {
-    expression(parser, compiler);
+    expression(parser, compiler)?;
     parser.consume(TokenType::RightParen, "Expect ')' after expression.")
 }
 
@@ -835,7 +831,7 @@ fn named_variable(
     };
 
     if assignable && parser.r#match(TokenType::Equal) {
-        expression(parser, compiler);
+        expression(parser, compiler)?;
         compiler.emit_bytes(set_op, arg, parser.line_number());
     } else {
         compiler.emit_bytes(get_op, arg, parser.line_number());
