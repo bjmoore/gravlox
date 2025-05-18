@@ -1,4 +1,3 @@
-use chunk::Chunk;
 use clap::Parser;
 use compiler::compile;
 use std::{
