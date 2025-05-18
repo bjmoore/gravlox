@@ -517,7 +517,7 @@ fn statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), C
         compiler.begin_scope();
         block(parser, compiler)?;
         compiler.end_scope(parser.line_number());
-	Ok(())
+        Ok(())
     } else if parser.r#match(TokenType::If) {
         if_statement(parser, compiler)
     } else if parser.r#match(TokenType::Return) {
@@ -538,7 +538,10 @@ fn print_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result
     Ok(())
 }
 
-fn return_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
+fn return_statement(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+) -> Result<(), CompileError> {
     if parser.r#match(TokenType::Semicolon) {
         compiler.emit_return(parser.line_number());
     } else {
@@ -643,7 +646,10 @@ fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(
     Ok(())
 }
 
-fn expression_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
+fn expression_statement(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+) -> Result<(), CompileError> {
     expression(parser, compiler);
     parser.consume(TokenType::Semicolon, "Expect ';' after expression.");
     compiler.emit_byte(OP_POP, parser.line_number());
@@ -703,7 +709,11 @@ fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), 
     parse_precedence(parser, compiler, Precedence::Assignment)
 }
 
-fn unary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
+fn unary(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let operator_type = parser.previous.t;
 
     parse_precedence(parser, compiler, Precedence::Unary);
@@ -717,7 +727,11 @@ fn unary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) 
     Ok(())
 }
 
-fn binary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
+fn binary(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let operator_type = parser.previous.t;
     let parse_rule = get_rule(operator_type);
     parse_precedence(parser, compiler, parse_rule.2.plus_one())?;
@@ -739,24 +753,42 @@ fn binary(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool)
     Ok(())
 }
 
-fn call(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
+fn call(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let arg_count = argument_list(parser, compiler);
     compiler.emit_bytes(OP_CALL, arg_count, parser.line_number());
     Ok(())
 }
 
-fn grouping(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
+fn grouping(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     expression(parser, compiler);
     parser.consume(TokenType::RightParen, "Expect ')' after expression.")
 }
 
-fn number(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
+fn number(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let lexeme = parser.lexer.lexeme(parser.previous);
     let number = lexeme.parse::<f64>().unwrap();
-    compiler.emit_constant(Value::Number(number), parser.line_number()).map(|_| ())
+    compiler
+        .emit_constant(Value::Number(number), parser.line_number())
+        .map(|_| ())
 }
 
-fn literal(parser: &mut Parser, compiler: &mut Take<Compiler>, _assignable: bool) -> Result<(), CompileError> {
+fn literal(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    _assignable: bool,
+) -> Result<(), CompileError> {
     let operator_type = parser.previous.t;
 
     match operator_type {
@@ -781,7 +813,11 @@ fn string(
         .map(|_| ())
 }
 
-fn variable(parser: &mut Parser, compiler: &mut Take<Compiler>, assignable: bool) -> Result<(), CompileError> {
+fn variable(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    assignable: bool,
+) -> Result<(), CompileError> {
     named_variable(parser, compiler, assignable)
 }
 
