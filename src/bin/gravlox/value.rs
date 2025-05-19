@@ -53,7 +53,7 @@ impl Value {
 pub struct Function {
     pub arity: usize,
     chunk: Obj<Chunk>,
-    name: Option<String>,
+    pub name: Option<String>,
 }
 
 impl Function {

@@ -31,10 +31,36 @@ impl GravloxVM {
         self.push(Value::FunctionRef(func.clone()));
         self.call(func, 0).expect("Failed calling VM entry point");
         if let Err(e) = self.run() {
-            // get current line
-            // print error with line info
-            // for each frame in the call stack:
-            // print function name, line
+            let ip = self.current_frame().ip;
+            let line = self
+                .current_frame()
+                .func()
+                .borrow()
+                .chunk()
+                .borrow()
+                .get_line(ip);
+
+            eprintln!("[line: {}] error: {}", line, e);
+            for frame in self.frames.iter().rev() {
+                let ip = self.current_frame().ip;
+                let line = self
+                    .current_frame()
+                    .func()
+                    .borrow()
+                    .chunk()
+                    .borrow()
+                    .get_line(ip);
+                eprintln!(
+                    "in {}() at line {}",
+                    frame
+                        .func()
+                        .borrow()
+                        .name
+                        .as_ref()
+                        .map_or("unknown", |s| &s),
+                    line
+                );
+            }
         }
     }
 
