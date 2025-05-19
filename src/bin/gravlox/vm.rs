@@ -1,11 +1,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::RuntimeError;
-use crate::obj::Obj;
+use crate::obj::{make_obj, Obj};
 use crate::op::*;
 use crate::value::Function;
+use crate::value::Native;
 use crate::value::Value;
 
 const NULL_FRAME_MSG: &'static str = "Current frame should not be None";
@@ -20,11 +22,15 @@ pub struct GravloxVM {
 
 impl GravloxVM {
     pub fn new() -> Self {
-        Self {
+        let mut vm = Self {
             stack: Vec::new(),
             globals: HashMap::new(),
             frames: Vec::new(),
-        }
+        };
+
+        vm.define_native("time", time, 0);
+
+        vm
     }
 
     pub fn interpret(&mut self, func: Obj<Function>) {
@@ -272,8 +278,8 @@ impl GravloxVM {
                     self.jump_back(distance);
                 }
                 OP_CALL => {
-                    let arg_count = self.read_byte();
-                    self.call_value(self.peek(arg_count as usize), arg_count)?;
+                    let arg_count = self.read_byte() as usize;
+                    self.call_value(self.peek(arg_count), arg_count)?;
                 }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
@@ -346,18 +352,25 @@ impl GravloxVM {
         self.frames.last_mut().expect(NULL_FRAME_MSG)
     }
 
-    fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<(), RuntimeError> {
+    fn call_value(&mut self, callee: Value, arg_count: usize) -> Result<(), RuntimeError> {
         match callee {
             Value::FunctionRef(f) => self.call(f, arg_count),
-            _ => Err(RuntimeError::NonCallableValue), // raise an informative error here
+            Value::NativeRef(f) => {
+                let args = &self.stack[self.stack.len() - arg_count..];
+                let result = (f.borrow().func)(args);
+                self.stack.truncate(self.stack.len() - arg_count - 1);
+                self.push(result);
+                Ok(())
+            }
+            _ => Err(RuntimeError::NonCallableValue),
         }
     }
 
-    fn call(&mut self, callee: Obj<Function>, arg_count: u8) -> Result<(), RuntimeError> {
+    fn call(&mut self, callee: Obj<Function>, arg_count: usize) -> Result<(), RuntimeError> {
         if arg_count as usize != callee.borrow().arity {
             return Err(RuntimeError::ArityMismatch {
                 expected: callee.borrow().arity,
-                actual: arg_count as usize,
+                actual: arg_count,
             });
         }
 
@@ -369,11 +382,20 @@ impl GravloxVM {
         let new_frame = CallFrame {
             func: callee,
             ip,
-            stack_offset: self.stack.len() - arg_count as usize - 1,
+            stack_offset: self.stack.len() - arg_count - 1,
         };
         self.frames.push(new_frame);
 
         Ok(())
+    }
+
+    fn define_native(&mut self, name: &'static str, nat: fn(&[Value]) -> Value, arity: usize) {
+        self.push(Value::StringRef(make_obj(String::from(name))));
+        self.push(Value::NativeRef(make_obj(Native { func: nat, arity })));
+        self.globals
+            .insert(String::from(name), self.stack[1].clone());
+        self.pop();
+        self.pop();
     }
 }
 
@@ -387,4 +409,9 @@ impl CallFrame {
     pub fn func(&self) -> Obj<Function> {
         self.func.clone()
     }
+}
+
+fn time(_args: &[Value]) -> Value {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    Value::Number(now.as_secs_f32() as f64)
 }

@@ -10,6 +10,7 @@ pub enum Value {
     Bool(bool),
     StringRef(Obj<String>),
     FunctionRef(Obj<Function>),
+    NativeRef(Obj<Native>),
 }
 
 impl Display for Value {
@@ -24,6 +25,7 @@ impl Display for Value {
                 "{}",
                 v.borrow().name.as_ref().map_or("<root>", |n| n.as_str())
             ),
+	    Value::NativeRef(_v) => write!(f, "<native>"),
         }
     }
 }
@@ -68,6 +70,12 @@ impl Function {
     pub fn chunk(&self) -> ChunkPtr {
         self.chunk.clone()
     }
+}
+
+#[derive(Debug)]
+pub struct Native {
+    pub arity: usize,
+    pub func: fn(&[Value]) -> Value,
 }
 
 #[cfg(test)]
