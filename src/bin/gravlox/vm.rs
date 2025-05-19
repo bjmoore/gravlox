@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::error::GravloxError;
+use crate::error::RuntimeError;
 use crate::obj::Obj;
 use crate::op::*;
 use crate::value::Function;
@@ -27,13 +27,18 @@ impl GravloxVM {
         }
     }
 
-    pub fn interpret(&mut self, func: Obj<Function>) -> Result<(), GravloxError> {
+    pub fn interpret(&mut self, func: Obj<Function>) {
         self.push(Value::FunctionRef(func.clone()));
-        self.call(func, 0);
-        self.run()
+        self.call(func, 0).expect("Failed calling VM entry point");
+        if let Err(e) = self.run() {
+            // get current line
+            // print error with line info
+            // for each frame in the call stack:
+            // print function name, line
+        }
     }
 
-    fn run(&mut self) -> Result<(), GravloxError> {
+    fn run(&mut self) -> Result<(), RuntimeError> {
         loop {
             let opcode = self.read_byte();
 
@@ -67,7 +72,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(-value));
                     } else {
-                        return self.runtime_error("Cannot negate non-number value");
+                        return Err(RuntimeError::TypeError("-", "number"));
                     }
                 }
                 OP_ADD => {
@@ -89,8 +94,7 @@ impl GravloxVM {
                             self.push(Value::StringRef(combined));
                         }
                         _ => {
-                            return self
-                                .runtime_error("+ operands must be both numbers or both strings");
+                            return Err(RuntimeError::TypeError("+", "numbers or strings"));
                         }
                     }
                 }
@@ -102,7 +106,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a - b));
                     } else {
-                        return self.runtime_error("- operands must be both numbers");
+                        return Err(RuntimeError::TypeError("-", "numbers"));
                     }
                 }
                 OP_MULTIPLY => {
@@ -113,7 +117,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a * b));
                     } else {
-                        return self.runtime_error("* operands must be both numbers");
+                        return Err(RuntimeError::TypeError("*", "numbers"));
                     }
                 }
                 OP_DIVIDE => {
@@ -124,7 +128,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Number(a / b));
                     } else {
-                        return self.runtime_error("/ operands must be both numbers");
+                        return Err(RuntimeError::TypeError("/", "numbers"));
                     }
                 }
                 OP_NIL => {
@@ -153,7 +157,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Bool(a > b));
                     } else {
-                        return self.runtime_error("< operands must be both numbers");
+                        return Err(RuntimeError::TypeError(">", "numbers"));
                     }
                 }
                 OP_LESS => {
@@ -164,7 +168,7 @@ impl GravloxVM {
                         let _ = self.pop();
                         self.push(Value::Bool(a < b));
                     } else {
-                        return self.runtime_error("> operands must be both numbers");
+                        return Err(RuntimeError::TypeError("<", "numbers"));
                     }
                 }
                 OP_POP => {
@@ -194,7 +198,7 @@ impl GravloxVM {
                     let value = match self.globals.get(&name) {
                         Some(value) => value.clone(),
                         None => {
-                            return self.runtime_error("Undefined variable");
+                            return Err(RuntimeError::UndefinedVariable(name));
                         }
                     };
 
@@ -209,7 +213,7 @@ impl GravloxVM {
                     if self.globals.contains_key(&name) {
                         self.globals.insert(name, self.peek(0));
                     } else {
-                        return self.runtime_error("Undefined variable");
+                        return Err(RuntimeError::UndefinedVariable(name));
                     }
                 }
                 OP_GET_LOCAL => {
@@ -243,9 +247,7 @@ impl GravloxVM {
                 }
                 OP_CALL => {
                     let arg_count = self.read_byte();
-                    if !self.call_value(self.peek(arg_count as usize), arg_count) {
-                        return self.runtime_error("Error in function call");
-                    }
+                    self.call_value(self.peek(arg_count as usize), arg_count)?;
                 }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
@@ -310,22 +312,6 @@ impl GravloxVM {
         self.stack[self.stack.len() - depth - 1].clone()
     }
 
-    fn runtime_error(&self, message: &str) -> Result<(), GravloxError> {
-        let ip = self.current_frame().ip;
-        let line = self
-            .current_frame()
-            .func()
-            .borrow()
-            .chunk()
-            .borrow()
-            .get_line(ip);
-
-        Err(GravloxError::RuntimeError(format!(
-            "[line {}] Error: {}",
-            line, message
-        )))
-    }
-
     fn current_frame(&self) -> &CallFrame {
         self.frames.last().expect(NULL_FRAME_MSG)
     }
@@ -334,22 +320,23 @@ impl GravloxVM {
         self.frames.last_mut().expect(NULL_FRAME_MSG)
     }
 
-    fn call_value(&mut self, callee: Value, arg_count: u8) -> bool {
+    fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<(), RuntimeError> {
         match callee {
-            Value::FunctionRef(f) => return self.call(f, arg_count),
-            _ => false, // raise an informative error here
+            Value::FunctionRef(f) => self.call(f, arg_count),
+            _ => Err(RuntimeError::NonCallableValue), // raise an informative error here
         }
     }
 
-    fn call(&mut self, callee: Obj<Function>, arg_count: u8) -> bool {
+    fn call(&mut self, callee: Obj<Function>, arg_count: u8) -> Result<(), RuntimeError> {
         if arg_count as usize != callee.borrow().arity {
-            // Emit error here because of arg count mismatch
-            return false;
+            return Err(RuntimeError::ArityMismatch {
+                expected: callee.borrow().arity,
+                actual: arg_count as usize,
+            });
         }
 
         if self.frames.len() == FRAMES_MAX {
-            // Emit error because we have too much recursion
-            return false;
+            return Err(RuntimeError::StackOverflow);
         }
 
         let ip = callee.borrow().chunk().borrow().get_ip();
@@ -360,7 +347,7 @@ impl GravloxVM {
         };
         self.frames.push(new_frame);
 
-        true
+        Ok(())
     }
 }
 

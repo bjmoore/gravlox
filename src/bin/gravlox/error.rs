@@ -1,21 +1,4 @@
-use std::error::Error;
-use std::fmt::Display;
 use thiserror::Error;
-
-#[derive(Debug, Clone)]
-pub enum GravloxError {
-    RuntimeError(String),
-}
-
-impl Error for GravloxError {}
-
-impl Display for GravloxError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GravloxError::RuntimeError(msg) => writeln!(f, "{}", msg),
-        }
-    }
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum CompileError {
@@ -42,4 +25,15 @@ pub enum CompileError {
 }
 
 #[derive(Error, Debug)]
-pub enum RuntimeError {}
+pub enum RuntimeError {
+    #[error("Stack overflow.")]
+    StackOverflow,
+    #[error("Argument count mismatch: expected {expected} but got {actual}")]
+    ArityMismatch { expected: usize, actual: usize },
+    #[error("Non-callable value")]
+    NonCallableValue,
+    #[error("Undefined variable: {0}")]
+    UndefinedVariable(String),
+    #[error("{0} operands must be type: {1}")]
+    TypeError(&'static str, &'static str),
+}

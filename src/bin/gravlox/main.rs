@@ -43,7 +43,7 @@ fn run_script(filename: &str, debug: bool) -> Result<(), Box<dyn Error>> {
     let script = compile(source, debug);
 
     if let Some(script) = script {
-        vm.interpret(script)?;
+        vm.interpret(script);
     }
 
     Ok(())
@@ -59,7 +59,7 @@ fn repl(debug: bool) -> Result<(), Box<dyn Error>> {
 
         let script = compile(buf.clone(), debug);
         if let Some(script) = script {
-            vm.interpret(script)?;
+            vm.interpret(script);
         }
     }
 }
