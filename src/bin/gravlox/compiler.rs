@@ -203,6 +203,7 @@ struct Local {
     depth: Option<usize>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum FunctionType {
     Function,
     Script,
@@ -538,6 +539,10 @@ fn return_statement(
     parser: &mut Parser,
     compiler: &mut Take<Compiler>,
 ) -> Result<(), CompileError> {
+    if compiler.function_type == FunctionType::Script {
+        return Err(CompileError::TopLevelReturn);
+    }
+
     if parser.r#match(TokenType::Semicolon) {
         compiler.emit_return(parser.line_number());
     } else {

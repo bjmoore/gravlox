@@ -22,6 +22,8 @@ pub enum CompileError {
     ExpectedExpression,
     #[error("Variable already defined in this scope.")]
     AlreadyDefined,
+    #[error("Can't return from top level.")]
+    TopLevelReturn,
 }
 
 #[derive(Error, Debug)]

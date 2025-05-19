@@ -1,0 +1,2 @@
+return; // expect: [line 1]: Error at 'return': Can't return from top level.
+ 
