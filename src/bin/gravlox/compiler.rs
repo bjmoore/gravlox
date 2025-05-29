@@ -435,11 +435,10 @@ fn identifier_constant(
     compiler: &mut Take<Compiler>,
 ) -> Result<usize, CompileError> {
     let name = parser.lexeme();
-    let heap_obj = Rc::new(RefCell::new(name.to_owned()));
     compiler
         .current_chunk()
         .borrow_mut()
-        .add_constant(Value::StringRef(heap_obj))
+        .add_constant(Value::StringRef(make_obj(name.to_owned())))
 }
 
 fn identifiers_equal(parser: &Parser, a: Token, b: Token) -> bool {
