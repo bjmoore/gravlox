@@ -1,0 +1,5 @@
+fun const_params(const a, b) {
+    a = "bar"; // expect: [line 2]: Error at '=': Can't assign to const identifier
+}
+
+const_params();

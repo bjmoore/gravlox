@@ -41,7 +41,6 @@ struct Compiler {
 
 impl Compiler {
     fn new(enclosing: Option<Compiler>, r#type: FunctionType, name: Option<&str>) -> Self {
-
         let mut new_compiler = Self {
             function: make_obj(Function::new(name)),
             function_type: r#type,
@@ -158,7 +157,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn add_local(&mut self, name: Token, constant: bool) -> Result<(), CompileError> {
+    fn add_local(&mut self, name: Token, is_const: bool) -> Result<(), CompileError> {
         if self.local_count == MAX_LOCALS {
             return Err(CompileError::TooManyLocals);
         }
@@ -167,7 +166,7 @@ impl Compiler {
 
         local.name = name;
         local.depth = None;
-        local.constant = constant;
+        local.is_const = is_const;
 
         self.local_count += 1;
 
@@ -203,7 +202,7 @@ const MAX_LOCALS: usize = 256;
 struct Local {
     name: Token,
     depth: Option<usize>,
-    constant: bool,
+    is_const: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -463,7 +462,7 @@ fn define_variable(
     parser: &mut Parser,
     compiler: &mut Take<Compiler>,
     global: usize,
-    constant: bool,
+    is_const: bool,
 ) {
     if compiler.scope_depth > 0 {
         compiler.mark_initialized();
@@ -471,7 +470,7 @@ fn define_variable(
     }
 
     // TODO: Since we support 24-bit constants with OP_CONSTANT_LONG, we should have an OP_DEFINE_GLOBAL_LONG
-    if constant {
+    if is_const {
         compiler.emit_bytes(OP_DEFINE_CONST_GLOBAL, global as u8, parser.line_number());
     } else {
         compiler.emit_bytes(OP_DEFINE_GLOBAL, global as u8, parser.line_number());
@@ -707,14 +706,16 @@ fn function(
             if compiler.function.borrow().arity > 255 {
                 // emit too many arguments error
             }
-            let constant_idx = parse_variable(parser, compiler, false, "Expect parameter name.")?;
-            define_variable(parser, compiler, constant_idx, false);
+            let is_const = parser.r#match(TokenType::Const);
+            let constant_idx =
+                parse_variable(parser, compiler, is_const, "Expect parameter name.")?;
+            define_variable(parser, compiler, constant_idx, is_const);
             if !parser.r#match(TokenType::Comma) {
                 break;
             }
         }
     }
-    parser.consume(TokenType::RightParen, "Expect ')' after function name.")?;
+    parser.consume(TokenType::RightParen, "Expect ')' after parameter list.")?;
     parser.consume(TokenType::LeftBrace, "Expect '{' before function body.")?;
     block(parser, compiler)?;
 
@@ -846,8 +847,8 @@ fn named_variable(
     compiler: &mut Take<Compiler>,
     assignable: bool,
 ) -> Result<(), CompileError> {
-    let (get_op, set_op, arg, constant) = match resolve_local(parser, compiler) {
-        Some((arg, constant)) => (OP_GET_LOCAL, OP_SET_LOCAL, arg, constant),
+    let (get_op, set_op, arg, is_const) = match resolve_local(parser, compiler) {
+        Some((arg, is_const)) => (OP_GET_LOCAL, OP_SET_LOCAL, arg, is_const),
         None => {
             let arg = identifier_constant(parser, compiler)? as u8;
             (OP_GET_GLOBAL, OP_SET_GLOBAL, arg, false)
@@ -855,9 +856,9 @@ fn named_variable(
     };
 
     if assignable && parser.r#match(TokenType::Equal) {
-	if constant {
-	    return Err(CompileError::AssignToConst);
-	}
+        if is_const {
+            return Err(CompileError::AssignToConst);
+        }
         expression(parser, compiler)?;
         compiler.emit_bytes(set_op, arg, parser.line_number());
     } else {
@@ -871,7 +872,7 @@ fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<(
     for i in (0..compiler.local_count).rev() {
         let local = compiler.locals[i];
         if identifiers_equal(parser, local.name, parser.previous) {
-            return Some((i as u8, local.constant));
+            return Some((i as u8, local.is_const));
         }
     }
 
