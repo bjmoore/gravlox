@@ -51,7 +51,7 @@ impl GravloxVM {
                 .borrow()
                 .get_line(ip);
 
-            eprintln!("[line: {}] error: {}", line, e);
+            println!("[line: {}] error: {}", line, e);
             for frame in self.frames.iter().rev() {
                 let ip = self.current_frame().ip;
                 let line = self
@@ -61,7 +61,7 @@ impl GravloxVM {
                     .chunk()
                     .borrow()
                     .get_line(ip);
-                eprintln!(
+                println!(
                     "in {}() at line {}",
                     frame
                         .func()

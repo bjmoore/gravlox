@@ -41,6 +41,7 @@ struct Compiler {
 
 impl Compiler {
     fn new(enclosing: Option<Compiler>, r#type: FunctionType, name: Option<&str>) -> Self {
+
         let mut new_compiler = Self {
             function: make_obj(Function::new(name)),
             function_type: r#type,
@@ -157,7 +158,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn add_local(&mut self, name: Token) -> Result<(), CompileError> {
+    fn add_local(&mut self, name: Token, constant: bool) -> Result<(), CompileError> {
         if self.local_count == MAX_LOCALS {
             return Err(CompileError::TooManyLocals);
         }
@@ -166,6 +167,7 @@ impl Compiler {
 
         local.name = name;
         local.depth = None;
+        local.constant = constant;
 
         self.local_count += 1;
 
@@ -201,6 +203,7 @@ const MAX_LOCALS: usize = 256;
 struct Local {
     name: Token,
     depth: Option<usize>,
+    constant: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -361,8 +364,10 @@ fn declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
 
     if let Err(err) = if parser.r#match(TokenType::Fun) {
         fun_declaration(parser, compiler)
+    } else if parser.r#match(TokenType::Const) {
+        var_declaration(parser, compiler, true)
     } else if parser.r#match(TokenType::Var) {
-        var_declaration(parser, compiler)
+        var_declaration(parser, compiler, false)
     } else {
         statement(parser, compiler)
     } {
@@ -371,8 +376,12 @@ fn declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) {
     }
 }
 
-fn var_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
-    let global = parse_variable(parser, compiler, "Expect variable name.")?;
+fn var_declaration(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    constant: bool,
+) -> Result<(), CompileError> {
+    let global = parse_variable(parser, compiler, constant, "Expect variable name.")?;
 
     if parser.r#match(TokenType::Equal) {
         expression(parser, compiler)?;
@@ -385,7 +394,7 @@ fn var_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result
         "Expect ';' after variable declaration.",
     )?;
 
-    define_variable(parser, compiler, global);
+    define_variable(parser, compiler, global, constant);
 
     Ok(())
 }
@@ -393,11 +402,12 @@ fn var_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result
 fn parse_variable(
     parser: &mut Parser,
     compiler: &mut Take<Compiler>,
+    constant: bool,
     message: &'static str,
 ) -> Result<usize, CompileError> {
     parser.consume(TokenType::Identifier, message)?;
 
-    declare_variable(parser, compiler)?;
+    declare_variable(parser, compiler, constant)?;
     if compiler.scope_depth > 0 {
         return Ok(0);
     }
@@ -408,6 +418,7 @@ fn parse_variable(
 fn declare_variable(
     parser: &mut Parser,
     compiler: &mut Take<Compiler>,
+    constant: bool,
 ) -> Result<(), CompileError> {
     if compiler.scope_depth == 0 {
         return Ok(());
@@ -427,7 +438,7 @@ fn declare_variable(
         }
     }
 
-    compiler.add_local(name)
+    compiler.add_local(name, constant)
 }
 
 fn identifier_constant(
@@ -448,14 +459,23 @@ fn identifiers_equal(parser: &Parser, a: Token, b: Token) -> bool {
     parser.lexer.lexeme(a) == parser.lexer.lexeme(b)
 }
 
-fn define_variable(parser: &mut Parser, compiler: &mut Take<Compiler>, global: usize) {
+fn define_variable(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+    global: usize,
+    constant: bool,
+) {
     if compiler.scope_depth > 0 {
         compiler.mark_initialized();
         return;
     }
 
     // TODO: Since we support 24-bit constants with OP_CONSTANT_LONG, we should have an OP_DEFINE_GLOBAL_LONG
-    compiler.emit_bytes(OP_DEFINE_GLOBAL, global as u8, parser.line_number());
+    if constant {
+        compiler.emit_bytes(OP_DEFINE_CONST_GLOBAL, global as u8, parser.line_number());
+    } else {
+        compiler.emit_bytes(OP_DEFINE_GLOBAL, global as u8, parser.line_number());
+    }
 }
 
 fn argument_list(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<u8, CompileError> {
@@ -602,7 +622,7 @@ fn for_statement(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(
     if parser.r#match(TokenType::Semicolon) {
         // No initializer.
     } else if parser.r#match(TokenType::Var) {
-        var_declaration(parser, compiler)?;
+        var_declaration(parser, compiler, false)?;
     } else {
         expression_statement(parser, compiler)?;
     }
@@ -665,10 +685,10 @@ fn block(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), Compi
 }
 
 fn fun_declaration(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
-    let global = parse_variable(parser, compiler, "Expect variable name.")?;
+    let global = parse_variable(parser, compiler, false, "Expect variable name.")?;
     compiler.mark_initialized();
     function(parser, compiler, FunctionType::Function)?;
-    define_variable(parser, compiler, global);
+    define_variable(parser, compiler, global, false);
     Ok(())
 }
 
@@ -687,8 +707,8 @@ fn function(
             if compiler.function.borrow().arity > 255 {
                 // emit too many arguments error
             }
-            let constant = parse_variable(parser, compiler, "Expect parameter name.")?;
-            define_variable(parser, compiler, constant);
+            let constant_idx = parse_variable(parser, compiler, false, "Expect parameter name.")?;
+            define_variable(parser, compiler, constant_idx, false);
             if !parser.r#match(TokenType::Comma) {
                 break;
             }
@@ -826,15 +846,18 @@ fn named_variable(
     compiler: &mut Take<Compiler>,
     assignable: bool,
 ) -> Result<(), CompileError> {
-    let (get_op, set_op, arg) = match resolve_local(parser, compiler) {
-        Some(arg) => (OP_GET_LOCAL, OP_SET_LOCAL, arg),
+    let (get_op, set_op, arg, constant) = match resolve_local(parser, compiler) {
+        Some((arg, constant)) => (OP_GET_LOCAL, OP_SET_LOCAL, arg, constant),
         None => {
             let arg = identifier_constant(parser, compiler)? as u8;
-            (OP_GET_GLOBAL, OP_SET_GLOBAL, arg)
+            (OP_GET_GLOBAL, OP_SET_GLOBAL, arg, false)
         }
     };
 
     if assignable && parser.r#match(TokenType::Equal) {
+	if constant {
+	    return Err(CompileError::AssignToConst);
+	}
         expression(parser, compiler)?;
         compiler.emit_bytes(set_op, arg, parser.line_number());
     } else {
@@ -844,11 +867,11 @@ fn named_variable(
     Ok(())
 }
 
-fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<u8> {
+fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<(u8, bool)> {
     for i in (0..compiler.local_count).rev() {
         let local = compiler.locals[i];
         if identifiers_equal(parser, local.name, parser.previous) {
-            return Some(i as u8);
+            return Some((i as u8, local.constant));
         }
     }
 

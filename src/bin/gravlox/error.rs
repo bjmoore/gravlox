@@ -24,6 +24,8 @@ pub enum CompileError {
     AlreadyDefined,
     #[error("Can't return from top level.")]
     TopLevelReturn,
+    #[error("Can't assign to const identifier")]
+    AssignToConst
 }
 
 #[derive(Error, Debug)]
@@ -38,6 +40,6 @@ pub enum RuntimeError {
     UndefinedVariable(String),
     #[error("{0} operands must be type: {1}")]
     TypeError(&'static str, &'static str),
-    #[error("Attempt to assign to const: {0}")]
+    #[error("Can't assign to const identifier: {0}")]
     AssignToConst(String),
 }

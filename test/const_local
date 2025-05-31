@@ -1,0 +1,6 @@
+fun bad() {
+    const a = 5;
+    a = 6;
+}
+
+bad(); // expect: [line 3]: Error at '=': Can't assign to const identifier

@@ -196,7 +196,17 @@ impl Scanner {
     fn identifier_type(&self) -> TokenType {
         match self.char_at(self.start) {
             'a' => self.keyword(1, 2, "nd", TokenType::And),
-            'c' => self.keyword(1, 4, "lass", TokenType::Class),
+            'c' => {
+                if self.current - self.start > 1 {
+                    match self.char_at(self.start + 1) {
+                        'l' => self.keyword(2, 3, "ass", TokenType::Class),
+                        'o' => self.keyword(2, 3, "nst", TokenType::Const),
+                        _ => TokenType::Identifier,
+                    }
+                } else {
+                    TokenType::Identifier
+                }
+            }
             'e' => self.keyword(1, 3, "lse", TokenType::Else),
             'f' => {
                 if self.current - self.start > 1 {
@@ -243,9 +253,4 @@ impl Scanner {
 
         TokenType::Identifier
     }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
 }
