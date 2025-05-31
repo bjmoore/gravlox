@@ -26,6 +26,7 @@ mod ops {
     pub const OP_JUMP:          u8 = 0x17;
     pub const OP_LOOP:          u8 = 0x18;
     pub const OP_CALL:          u8 = 0x19;
+    pub const OP_DEFINE_CONST_GLOBAL: u8 = 0x1A;
 }
 
 pub use ops::*;

@@ -241,6 +241,18 @@ impl Display for Chunk {
                     idx += 1;
                     current_line_idx += 1;
                 }
+                OP_DEFINE_CONST_GLOBAL => {
+                    let const_idx = self.code[idx + 1] as usize;
+                    print_const_instr(
+                        f,
+                        idx,
+                        &line_display,
+                        "def_const_global",
+                        self.constants[const_idx].borrow(),
+                    )?;
+                    idx += 1;
+                    current_line_idx += 1;
+                }
                 OP_GET_GLOBAL => {
                     let const_idx = self.code[idx + 1] as usize;
                     print_const_instr(
@@ -329,7 +341,7 @@ mod test {
     fn test_overflow_to_constant_long() {
         let mut test_chunk = Chunk::new();
         for _ in 0..=256 {
-            let _ = test_chunk.add_constant(Value::Number(1.234), 0);
+            let _ = test_chunk.add_constant(Value::Number(1.234));
         }
         assert_eq!(test_chunk.code.len(), 256 * 2 + 4, "code: {}", test_chunk);
         assert_eq!(test_chunk.code[512..], [OP_CONSTANT_LONG, 0, 1, 0]);

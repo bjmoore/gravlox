@@ -13,9 +13,14 @@ use crate::value::Value;
 const NULL_FRAME_MSG: &'static str = "Current frame should not be None";
 const FRAMES_MAX: usize = 255;
 
+struct Global {
+    constant: bool,
+    value: Value,
+}
+
 pub struct GravloxVM {
     stack: Vec<Value>,
-    globals: HashMap<String, Value>,
+    globals: HashMap<String, Global>,
     // The book uses a fixed-size array of CallFrames, but I'm just going to use a vec for now to keep it simple.
     frames: Vec<CallFrame>,
 }
@@ -218,7 +223,30 @@ impl GravloxVM {
                     };
                     let value = self.peek(0);
 
-                    self.globals.insert(name, value);
+                    self.globals.insert(
+                        name,
+                        Global {
+                            constant: false,
+                            value,
+                        },
+                    );
+                    self.pop();
+                }
+                OP_DEFINE_CONST_GLOBAL => {
+                    let const_idx = self.read_byte() as usize;
+                    let name = match self.read_constant(const_idx) {
+                        Value::StringRef(s) => s.borrow().clone(),
+                        _ => unreachable!(),
+                    };
+                    let value = self.peek(0);
+
+                    self.globals.insert(
+                        name,
+                        Global {
+                            constant: true,
+                            value,
+                        },
+                    );
                     self.pop();
                 }
                 OP_GET_GLOBAL => {
@@ -228,7 +256,7 @@ impl GravloxVM {
                         _ => unreachable!(),
                     };
                     let value = match self.globals.get(&name) {
-                        Some(value) => value.clone(),
+                        Some(global) => global.value.clone(),
                         None => {
                             return Err(RuntimeError::UndefinedVariable(name));
                         }
@@ -242,8 +270,13 @@ impl GravloxVM {
                         Value::StringRef(obj) => obj.borrow().clone(),
                         _ => unreachable!(),
                     };
-                    if self.globals.contains_key(&name) {
-                        self.globals.insert(name, self.peek(0));
+                    let value = self.peek(0);
+                    if let Some(global) = self.globals.get_mut(&name) {
+                        if global.constant {
+                            return Err(RuntimeError::AssignToConst(name));
+                        }
+
+                        global.value = value;
                     } else {
                         return Err(RuntimeError::UndefinedVariable(name));
                     }
@@ -392,8 +425,13 @@ impl GravloxVM {
     fn define_native(&mut self, name: &'static str, nat: fn(&[Value]) -> Value, arity: usize) {
         self.push(Value::StringRef(make_obj(String::from(name))));
         self.push(Value::NativeRef(make_obj(Native { func: nat, arity })));
-        self.globals
-            .insert(String::from(name), self.stack[1].clone());
+        self.globals.insert(
+            String::from(name),
+            Global {
+                constant: true,
+                value: self.stack[1].clone(),
+            },
+        );
         self.pop();
         self.pop();
     }

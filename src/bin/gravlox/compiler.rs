@@ -332,7 +332,7 @@ fn parse_precedence(
     precedence: Precedence,
 ) -> Result<(), CompileError> {
     parser.advance();
-    let mut prefix_rule = get_rule(parser.previous.t)
+    let prefix_rule = get_rule(parser.previous.t)
         .0
         .ok_or(CompileError::ExpectedExpression)?;
 
@@ -343,7 +343,7 @@ fn parse_precedence(
         parser.advance();
         let infix_rule = get_rule(parser.previous.t).1;
         match infix_rule {
-            Some(mut rule) => rule(parser, compiler, assignable)?,
+            Some(rule) => rule(parser, compiler, assignable)?,
             None => (),
         }
     }
@@ -856,8 +856,8 @@ fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<u
 }
 
 struct ParseRule(
-    Option<fn (&mut Parser, &mut Take<Compiler>, bool) -> Result<(), CompileError>>,
-    Option<fn (&mut Parser, &mut Take<Compiler>, bool) -> Result<(), CompileError>>,
+    Option<fn(&mut Parser, &mut Take<Compiler>, bool) -> Result<(), CompileError>>,
+    Option<fn(&mut Parser, &mut Take<Compiler>, bool) -> Result<(), CompileError>>,
     Precedence,
 );
 

@@ -38,4 +38,6 @@ pub enum RuntimeError {
     UndefinedVariable(String),
     #[error("{0} operands must be type: {1}")]
     TypeError(&'static str, &'static str),
+    #[error("Attempt to assign to const: {0}")]
+    AssignToConst(String),
 }
