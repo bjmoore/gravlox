@@ -903,6 +903,7 @@ fn get_rule(t: TokenType) -> ParseRule {
         TokenType::Number       => ParseRule(Some(Box::new(number)),   None,                   Precedence::None),
         TokenType::And          => ParseRule(None,                     Some(Box::new(and)),    Precedence::And),
         TokenType::Class        => ParseRule(None,                     None,                   Precedence::None),
+        TokenType::Const        => ParseRule(None,                     None,                   Precedence::None),
         TokenType::Else         => ParseRule(None,                     None,                   Precedence::None),
         TokenType::False        => ParseRule(Some(Box::new(literal)),  None,                   Precedence::None),
         TokenType::For          => ParseRule(None,                     None,                   Precedence::None),
