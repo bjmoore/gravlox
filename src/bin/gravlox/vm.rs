@@ -34,6 +34,7 @@ impl GravloxVM {
         };
 
         vm.define_native("time", time, 0);
+        vm.define_native("sleep", sleep, 1);
 
         vm
     }
@@ -452,4 +453,17 @@ impl CallFrame {
 fn time(_args: &[Value]) -> Value {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     Value::Number(now.as_secs_f32() as f64)
+}
+
+fn sleep(args: &[Value]) -> Value {
+    let sleep_duration = match args[0] {
+	Value::Number(n) => n,
+	_ => unreachable!("Invalid argument type to sleep()")
+    };
+
+    let sleep_duration = std::time::Duration::from_secs_f64(sleep_duration);
+
+    std::thread::sleep(sleep_duration);
+
+    Value::Nil
 }
