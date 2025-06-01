@@ -11,6 +11,7 @@ pub enum Value {
     StringRef(Obj<String>),
     FunctionRef(Obj<Function>),
     NativeRef(Obj<Native>),
+    ClosureRef(Obj<Closure>),
 }
 
 impl Display for Value {
@@ -20,12 +21,9 @@ impl Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Bool(v) => write!(f, "{}", v),
             Value::StringRef(v) => write!(f, "{}", v.borrow()),
-            Value::FunctionRef(v) => write!(
-                f,
-                "{}",
-                v.borrow().name.as_ref().map_or("<root>", |n| n.as_str())
-            ),
-	    Value::NativeRef(_v) => write!(f, "<native>"),
+            Value::FunctionRef(v) => write!(f, "{}", v.borrow()),
+            Value::NativeRef(_v) => write!(f, "<native>"),
+            Value::ClosureRef(v) => write!(f, "{}", v.borrow().func.borrow()),
         }
     }
 }
@@ -72,10 +70,21 @@ impl Function {
     }
 }
 
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name.as_ref().map_or("<root>", |n| n.as_str()))
+    }
+}
+
 #[derive(Debug)]
 pub struct Native {
     pub arity: usize,
     pub func: fn(&[Value]) -> Value,
+}
+
+#[derive(Debug)]
+pub struct Closure {
+    pub func: Obj<Function>,
 }
 
 #[cfg(test)]
