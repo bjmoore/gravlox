@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::RuntimeError;
 use crate::obj::{make_obj, Obj};
 use crate::op::*;
+use crate::value::Closure;
 use crate::value::Function;
 use crate::value::Native;
 use crate::value::Value;
@@ -41,14 +42,21 @@ impl GravloxVM {
 
     pub fn interpret(&mut self, func: Obj<Function>) {
         self.push(Value::FunctionRef(func.clone()));
-        self.call(func, 0).expect("Failed calling VM entry point");
+        let closure = make_obj(Closure { func });
+        self.pop();
+        self.push(Value::ClosureRef(closure.clone()));
+        self.call(closure, 0)
+            .expect("Failed calling VM entry point");
+
         if let Err(e) = self.run() {
             let ip = self.current_frame().ip;
             let line = self
                 .current_frame()
-                .func()
+                .closure
                 .borrow()
-                .chunk()
+                .func
+                .borrow()
+                .chunk
                 .borrow()
                 .get_line(ip);
 
@@ -57,15 +65,19 @@ impl GravloxVM {
                 let ip = self.current_frame().ip;
                 let line = self
                     .current_frame()
-                    .func()
+                    .closure
                     .borrow()
-                    .chunk()
+                    .func
+                    .borrow()
+                    .chunk
                     .borrow()
                     .get_line(ip);
                 println!(
                     "in {}() at line {}",
                     frame
-                        .func()
+                        .closure
+                        .borrow()
+                        .func
                         .borrow()
                         .name
                         .as_ref()
@@ -220,7 +232,7 @@ impl GravloxVM {
                     let const_idx = self.read_byte() as usize;
                     let name = match self.read_constant(const_idx) {
                         Value::StringRef(s) => s.borrow().clone(),
-                        _ => unreachable!(),
+                        _ => unreachable!(""),
                     };
                     let value = self.peek(0);
 
@@ -315,6 +327,15 @@ impl GravloxVM {
                     let arg_count = self.read_byte() as usize;
                     self.call_value(self.peek(arg_count), arg_count)?;
                 }
+                OP_CLOSURE => {
+                    let const_idx = self.read_byte() as usize;
+                    let func = match self.read_constant(const_idx) {
+                        Value::FunctionRef(f) => f.clone(),
+                        _ => unreachable!("OP_CLOSURE on a non-function value"),
+                    };
+                    let closure = make_obj(Closure { func });
+                    self.push(Value::ClosureRef(closure));
+                }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
         }
@@ -339,9 +360,11 @@ impl GravloxVM {
     fn read_constant(&self, const_idx: usize) -> Value {
         let current_frame = self.current_frame();
         let ret = current_frame
-            .func()
+            .closure
             .borrow()
-            .chunk()
+            .func
+            .borrow()
+            .chunk
             .borrow()
             .get_constant(const_idx);
         ret
@@ -388,7 +411,7 @@ impl GravloxVM {
 
     fn call_value(&mut self, callee: Value, arg_count: usize) -> Result<(), RuntimeError> {
         match callee {
-            Value::FunctionRef(f) => self.call(f, arg_count),
+            Value::ClosureRef(f) => self.call(f, arg_count),
             Value::NativeRef(f) => {
                 let args = &self.stack[self.stack.len() - arg_count..];
                 let result = (f.borrow().func)(args);
@@ -400,10 +423,10 @@ impl GravloxVM {
         }
     }
 
-    fn call(&mut self, callee: Obj<Function>, arg_count: usize) -> Result<(), RuntimeError> {
-        if arg_count as usize != callee.borrow().arity {
+    fn call(&mut self, callee: Obj<Closure>, arg_count: usize) -> Result<(), RuntimeError> {
+        if arg_count as usize != callee.borrow().func.borrow().arity {
             return Err(RuntimeError::ArityMismatch {
-                expected: callee.borrow().arity,
+                expected: callee.borrow().func.borrow().arity,
                 actual: arg_count,
             });
         }
@@ -412,9 +435,9 @@ impl GravloxVM {
             return Err(RuntimeError::StackOverflow);
         }
 
-        let ip = callee.borrow().chunk().borrow().get_ip();
+        let ip = callee.borrow().func.borrow().chunk.borrow().get_ip();
         let new_frame = CallFrame {
-            func: callee,
+            closure: callee,
             ip,
             stack_offset: self.stack.len() - arg_count - 1,
         };
@@ -439,15 +462,9 @@ impl GravloxVM {
 }
 
 struct CallFrame {
-    func: Obj<Function>,
+    closure: Obj<Closure>,
     ip: *const u8,
     stack_offset: usize,
-}
-
-impl CallFrame {
-    pub fn func(&self) -> Obj<Function> {
-        self.func.clone()
-    }
 }
 
 fn time(_args: &[Value]) -> Value {
@@ -457,8 +474,8 @@ fn time(_args: &[Value]) -> Value {
 
 fn sleep(args: &[Value]) -> Value {
     let sleep_duration = match args[0] {
-	Value::Number(n) => n,
-	_ => unreachable!("Invalid argument type to sleep()")
+        Value::Number(n) => n,
+        _ => unreachable!("Invalid argument type to sleep()"),
     };
 
     let sleep_duration = std::time::Duration::from_secs_f64(sleep_duration);

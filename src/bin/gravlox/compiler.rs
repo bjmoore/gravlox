@@ -68,7 +68,7 @@ impl Compiler {
         // Return a (mutable!) object that implements add_code, add_constant, etc
         // clone the rc:: into a new container type (FunctionRef?)
         // implement pass-thru methods on FunctionRef
-        self.function.borrow().chunk()
+        self.function.borrow().chunk.clone()
     }
 
     fn emit_byte(&mut self, byte: u8, line_number: u32) {
@@ -117,6 +117,36 @@ impl Compiler {
         }
 
         Ok(const_idx)
+    }
+
+    fn emit_closure(&mut self, value: Value, line_number: u32) -> Result<(), CompileError> {
+        let const_idx = self.current_chunk().borrow_mut().add_constant(value)?;
+
+	// TODO: the OP_CLOSURE handling code will need to deal with long constants;
+	// for now let's not worry about it
+        if const_idx < 256 {
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(OP_CLOSURE, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(const_idx as u8, line_number);
+        } else {
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(OP_CLOSURE, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code((const_idx >> 16) as u8, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code((const_idx >> 8) as u8, line_number);
+            self.current_chunk()
+                .borrow_mut()
+                .add_code(const_idx as u8, line_number);
+        }
+
+        Ok(())
     }
 
     fn emit_jump(&mut self, instruction: u8, line_number: u32) -> usize {
@@ -704,7 +734,7 @@ fn function(
         loop {
             compiler.function.borrow_mut().arity += 1;
             if compiler.function.borrow().arity > 255 {
-                // emit too many arguments error
+                // TODO: emit too many arguments error
             }
             let is_const = parser.r#match(TokenType::Const);
             let constant_idx =
@@ -721,9 +751,7 @@ fn function(
 
     let func = compiler.end_compiler(parser.line_number(), false);
     compiler.pop_compiler();
-    compiler
-        .emit_constant(Value::FunctionRef(func), parser.line_number())
-        .map(|_| ())
+    compiler.emit_closure(Value::FunctionRef(func), parser.line_number())
 }
 
 fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
@@ -731,7 +759,7 @@ fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), 
 }
 
 fn unary(
-    parser: &mut Parser,
+     parser: &mut Parser,
     compiler: &mut Take<Compiler>,
     _assignable: bool,
 ) -> Result<(), CompileError> {

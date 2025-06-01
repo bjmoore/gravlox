@@ -52,7 +52,7 @@ impl Value {
 #[derive(Debug)]
 pub struct Function {
     pub arity: usize,
-    chunk: Obj<Chunk>,
+    pub chunk: Obj<Chunk>,
     pub name: Option<String>,
 }
 
@@ -63,10 +63,6 @@ impl Function {
             chunk: make_obj(Chunk::new()),
             name: name.map(String::from),
         }
-    }
-
-    pub fn chunk(&self) -> ChunkPtr {
-        self.chunk.clone()
     }
 }
 
