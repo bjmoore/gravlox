@@ -452,7 +452,7 @@ impl CallFrame {
 
 fn time(_args: &[Value]) -> Value {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    Value::Number(now.as_secs_f32() as f64)
+    Value::Number(now.as_secs() as f64)
 }
 
 fn sleep(args: &[Value]) -> Value {
