@@ -6,6 +6,8 @@ use std::{
     io::{self, Write},
 };
 use vm::GravloxVM;
+use value::Value;
+use std::collections::VecDeque;
 
 mod chunk;
 mod compiler;
@@ -19,18 +21,28 @@ mod value;
 mod vm;
 
 #[derive(Parser, Debug)]
+#[command(version, about)]
 struct Args {
     filename: Option<String>,
 
     #[arg(short, long)]
     debug: bool,
+
+    #[arg(long)]
+    disassemble: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     match args.filename {
-        Some(filename) => run_script(&filename, args.debug),
+        Some(filename) => {
+            if args.disassemble {
+                disassemble(&filename)
+            } else {
+                run_script(&filename, args.debug)
+            }
+        },
         None => repl(args.debug),
     }?;
 
@@ -62,4 +74,39 @@ fn repl(debug: bool) -> Result<(), Box<dyn Error>> {
             vm.interpret(script);
         }
     }
+}
+
+fn disassemble(filename: &str) -> Result<(), Box<dyn Error>> {
+    let source = String::from_utf8(fs::read(filename)?)?;
+    let script = compile(source, false);
+    let mut functions = VecDeque::new();
+
+    if let Some(script) = script {
+        functions.push_back(script);
+    }
+
+    while let Some(function) = functions.pop_front() {
+        let function = function.borrow();
+        let chunk = function.chunk.borrow();
+        let name = function.name.as_ref().map_or("<root>", |s| s.as_str());
+
+        println!("== {} ==", name);
+
+        if chunk.constants.len() > 0 {
+            println!("constants:");
+            for (idx, constant) in chunk.constants.iter().enumerate() {
+                if let Value::FunctionRef(f) = constant {
+                    functions.push_back(f.clone());
+                } else {
+                    println!("{idx}: {}", constant);
+                }
+            }
+            println!();
+        }
+
+        println!("code:");
+        println!("{}", chunk);
+    }
+    
+    Ok(())
 }

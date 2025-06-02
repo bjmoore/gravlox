@@ -10,9 +10,9 @@ use crate::value::Value;
 const MAX_CONSTANTS: usize = 2usize.pow(24);
 
 pub struct Chunk {
-    code: Vec<u8>,
-    constants: Vec<Value>,
-    lineinfo: Vec<(u32, u32)>,
+    pub code: Vec<u8>,
+    pub constants: Vec<Value>,
+    pub lineinfo: Vec<(u32, u32)>,
 }
 
 pub type ChunkPtr = Rc<RefCell<Chunk>>;
