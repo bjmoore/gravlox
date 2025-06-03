@@ -1,0 +1,4 @@
+const a = 5;
+var a = 5;
+a = 6;
+print a; // expect: 6
