@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -51,6 +50,12 @@ impl Chunk {
         } else {
             self.lineinfo.push((line_number, 1));
         }
+    }
+
+    pub fn add_long(&mut self, code: usize, line_number: u32) {
+        self.add_code((code >> 16) as u8, line_number);
+        self.add_code((code >> 8) as u8, line_number);
+        self.add_code(code as u8, line_number);
     }
 
     pub fn add_constant(&mut self, value: Value) -> Result<usize, CompileError> {
@@ -167,7 +172,7 @@ impl Display for Chunk {
                         idx,
                         &line_display,
                         "const",
-                        self.constants[const_idx].borrow(),
+                        &self.constants[const_idx],
                     )?;
                     idx += 1;
                     current_line_idx += 1;
@@ -182,7 +187,7 @@ impl Display for Chunk {
                         idx,
                         &line_display,
                         "const_long",
-                        self.constants[const_idx].borrow(),
+                        &self.constants[const_idx],
                     )?;
                     idx += 3;
                     current_line_idx += 3;
@@ -236,7 +241,7 @@ impl Display for Chunk {
                         idx,
                         &line_display,
                         "def_global",
-                        self.constants[const_idx].borrow(),
+                        &self.constants[const_idx],
                     )?;
                     idx += 1;
                     current_line_idx += 1;
@@ -248,7 +253,7 @@ impl Display for Chunk {
                         idx,
                         &line_display,
                         "def_const_global",
-                        self.constants[const_idx].borrow(),
+                        &self.constants[const_idx],
                     )?;
                     idx += 1;
                     current_line_idx += 1;
@@ -260,7 +265,7 @@ impl Display for Chunk {
                         idx,
                         &line_display,
                         "get_global",
-                        self.constants[const_idx].borrow(),
+                        &self.constants[const_idx],
                     )?;
                     idx += 1;
                     current_line_idx += 1;
@@ -272,7 +277,7 @@ impl Display for Chunk {
                         idx,
                         &line_display,
                         "set_global",
-                        self.constants[const_idx].borrow(),
+                        &self.constants[const_idx],
                     )?;
                     idx += 1;
                     current_line_idx += 1;
@@ -320,16 +325,42 @@ impl Display for Chunk {
                     current_line_idx += 1;
                 }
                 OP_CLOSURE => {
-                    let const_idx = self.code[idx + 1] as usize;
+                    let func_idx = self.code[idx + 1] as usize;
+                    let upval_count = match &self.constants[func_idx] {
+                        Value::FunctionRef(f) => f.borrow().upvalue_count,
+                        _ => unreachable!(),
+                    };
                     print_const_instr(
                         f,
                         idx,
                         &line_display,
                         "closure",
-                        self.constants[const_idx].borrow(),
+                        &self.constants[func_idx],
                     )?;
+                    idx += 2;
+                    current_line_idx += 2;
+                    for _ in 0..upval_count {
+                        print_simple_instr(f, idx, &line_display, "is_local")?;
+                        let slot = self.code[idx + 1] as usize;
+                        print_byte_instr(f, idx, &line_display, "upval_idx", slot)?;
+                        idx += 1;
+                        current_line_idx += 1;
+                    }
+                }
+                OP_GET_UPVALUE => {
+                    let slot = self.code[idx + 1] as usize;
+                    print_byte_instr(f, idx, &line_display, "get_upval", slot)?;
                     idx += 1;
                     current_line_idx += 1;
+                }
+                OP_SET_UPVALUE => {
+                    let slot = self.code[idx + 1] as usize;
+                    print_byte_instr(f, idx, &line_display, "set_upval", slot)?;
+                    idx += 1;
+                    current_line_idx += 1;
+                }
+                OP_CLOSE_UPVALUE => {
+                    print_simple_instr(f, idx, &line_display, "close_upval")?;
                 }
                 _ => unreachable!(
                     "Unknown opcode while printing chunk: 0x{:02x}",

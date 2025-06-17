@@ -12,6 +12,9 @@ use crate::token::TokenType;
 use crate::value::Function;
 use crate::value::Value;
 
+const MAX_LOCALS: usize = u8::MAX as usize;
+const MAX_UPVALUES: usize = u8::MAX as usize;
+
 pub fn compile(source: String, debug: bool) -> Option<Obj<Function>> {
     let mut parser = Parser::new(source);
     let mut compiler = Take::new(Compiler::new(None, FunctionType::Script, Some("<root>")));
@@ -20,7 +23,8 @@ pub fn compile(source: String, debug: bool) -> Option<Obj<Function>> {
     while !parser.r#match(TokenType::Eof) {
         declaration(&mut parser, &mut compiler);
     }
-    let func = compiler.end_compiler(parser.line_number(), debug);
+    // Maybe worth asserting that upvalues is empty here.
+    let (func, _) = compiler.end_compiler(parser.line_number(), debug);
 
     // Return an error here
     if !parser.had_error {
@@ -30,13 +34,15 @@ pub fn compile(source: String, debug: bool) -> Option<Obj<Function>> {
     }
 }
 
+#[derive(Debug)]
 struct Compiler {
     function: Obj<Function>,
     function_type: FunctionType,
     locals: [Local; MAX_LOCALS],
     local_count: usize,
     scope_depth: usize,
-    enclosing: Option<Box<Compiler>>,
+    enclosing: Option<Box<Take<Compiler>>>,
+    upvalues: Vec<Upvalue>,
 }
 
 impl Compiler {
@@ -47,7 +53,8 @@ impl Compiler {
             locals: [Local::default(); MAX_LOCALS],
             local_count: 0,
             scope_depth: 0,
-            enclosing: enclosing.map(|c| Box::new(c)),
+            enclosing: enclosing.map(|c| Box::new(Take::new(c))),
+            upvalues: Vec::new(),
         };
 
         new_compiler.locals[0].name = Token::default();
@@ -57,11 +64,11 @@ impl Compiler {
         new_compiler
     }
 
-    fn end_compiler(&mut self, line_number: u32, _debug: bool) -> Obj<Function> {
+    fn end_compiler(&mut self, line_number: u32, _debug: bool) -> (Obj<Function>, Vec<Upvalue>) {
         self.emit_return(line_number);
         let func = self.function.clone();
 
-        func
+        (func, self.upvalues.clone())
     }
 
     fn current_chunk(&self) -> ChunkPtr {
@@ -107,13 +114,7 @@ impl Compiler {
                 .add_code(OP_CONSTANT_LONG, line_number);
             self.current_chunk()
                 .borrow_mut()
-                .add_code((const_idx >> 16) as u8, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code((const_idx >> 8) as u8, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code(const_idx as u8, line_number);
+                .add_long(const_idx, line_number);
         }
 
         Ok(const_idx)
@@ -122,8 +123,6 @@ impl Compiler {
     fn emit_closure(&mut self, value: Value, line_number: u32) -> Result<(), CompileError> {
         let const_idx = self.current_chunk().borrow_mut().add_constant(value)?;
 
-	// TODO: the OP_CLOSURE handling code will need to deal with long constants;
-	// for now let's not worry about it
         if const_idx < 256 {
             self.current_chunk()
                 .borrow_mut()
@@ -134,16 +133,10 @@ impl Compiler {
         } else {
             self.current_chunk()
                 .borrow_mut()
-                .add_code(OP_CLOSURE, line_number);
+                .add_code(OP_CLOSURE_LONG, line_number);
             self.current_chunk()
                 .borrow_mut()
-                .add_code((const_idx >> 16) as u8, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code((const_idx >> 8) as u8, line_number);
-            self.current_chunk()
-                .borrow_mut()
-                .add_code(const_idx as u8, line_number);
+                .add_long(const_idx, line_number);
         }
 
         Ok(())
@@ -203,6 +196,18 @@ impl Compiler {
         Ok(())
     }
 
+    fn add_upvalue(&mut self, index: u8, is_local: bool) -> Result<u8, CompileError> {
+        if self.upvalues.len() == MAX_UPVALUES {
+            return Err(CompileError::TooManyUpvalues);
+        }
+
+        self.upvalues.push(Upvalue { index, is_local });
+
+        self.function.borrow_mut().upvalue_count += 1;
+
+        Ok((self.upvalues.len() - 1) as u8)
+    }
+
     fn mark_initialized(&mut self) {
         if self.scope_depth == 0 {
             return;
@@ -220,19 +225,28 @@ impl Compiler {
         while self.local_count > 0
             && self.locals[self.local_count - 1].depth.unwrap() > self.scope_depth
         {
-            self.emit_byte(OP_POP, line_number);
+            if self.locals[self.local_count - 1].is_captured {
+                self.emit_byte(OP_CLOSE_UPVALUE, line_number);
+            } else {
+                self.emit_byte(OP_POP, line_number);
+            }
             self.local_count -= 1;
         }
     }
 }
-
-const MAX_LOCALS: usize = 256;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct Local {
     name: Token,
     depth: Option<usize>,
     is_const: bool,
+    is_captured: bool
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Upvalue {
+    index: u8,
+    is_local: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -749,9 +763,16 @@ fn function(
     parser.consume(TokenType::LeftBrace, "Expect '{' before function body.")?;
     block(parser, compiler)?;
 
-    let func = compiler.end_compiler(parser.line_number(), false);
+    // before/while ending the compiler, we need to emit CLOSE_UPVALUE for any closed-over locals
+    let (func, upvalues) = compiler.end_compiler(parser.line_number(), false);
     compiler.pop_compiler();
-    compiler.emit_closure(Value::FunctionRef(func), parser.line_number())
+    compiler.emit_closure(Value::FunctionRef(func), parser.line_number())?;
+    for upvalue in upvalues {
+        compiler.emit_byte(if upvalue.is_local { 1 } else { 0 }, parser.line_number());
+        compiler.emit_byte(upvalue.index, parser.line_number());
+    }
+
+    Ok(())
 }
 
 fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), CompileError> {
@@ -759,7 +780,7 @@ fn expression(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Result<(), 
 }
 
 fn unary(
-     parser: &mut Parser,
+    parser: &mut Parser,
     compiler: &mut Take<Compiler>,
     _assignable: bool,
 ) -> Result<(), CompileError> {
@@ -875,22 +896,36 @@ fn named_variable(
     compiler: &mut Take<Compiler>,
     assignable: bool,
 ) -> Result<(), CompileError> {
-    let (get_op, set_op, arg, is_const) = match resolve_local(parser, compiler) {
-        Some((arg, is_const)) => (OP_GET_LOCAL, OP_SET_LOCAL, arg, is_const),
-        None => {
-            let arg = identifier_constant(parser, compiler)? as u8;
-            (OP_GET_GLOBAL, OP_SET_GLOBAL, arg, false)
-        }
-    };
+    let get_op;
+    let set_op;
+    let index;
+    let is_const;
+
+    if let Some((local_index, local_is_const)) = resolve_local(parser, compiler) {
+        get_op = OP_GET_LOCAL;
+        set_op = OP_SET_LOCAL;
+        index = local_index;
+        is_const = local_is_const;
+    } else if let Some((upval_index, upval_is_const)) = resolve_upvalue(parser, compiler)? {
+        get_op = OP_GET_UPVALUE;
+        set_op = OP_SET_UPVALUE;
+        index = upval_index;
+        is_const = upval_is_const;
+    } else {
+        get_op = OP_GET_GLOBAL;
+        set_op = OP_SET_GLOBAL;
+        index = identifier_constant(parser, compiler)? as u8;
+        is_const = false;
+    }
 
     if assignable && parser.r#match(TokenType::Equal) {
         if is_const {
             return Err(CompileError::AssignToConst);
         }
         expression(parser, compiler)?;
-        compiler.emit_bytes(set_op, arg, parser.line_number());
+        compiler.emit_bytes(set_op, index, parser.line_number());
     } else {
-        compiler.emit_bytes(get_op, arg, parser.line_number());
+        compiler.emit_bytes(get_op, index, parser.line_number());
     }
 
     Ok(())
@@ -905,6 +940,24 @@ fn resolve_local(parser: &mut Parser, compiler: &mut Take<Compiler>) -> Option<(
     }
 
     None
+}
+
+fn resolve_upvalue(
+    parser: &mut Parser,
+    compiler: &mut Take<Compiler>,
+) -> Result<Option<(u8, bool)>, CompileError> {
+    if let Some(enclosing) = compiler.enclosing.as_mut() {
+        if let Some((local_index, is_const)) = resolve_local(parser, enclosing) {
+            compiler.locals[local_index as usize].is_captured = true;
+            let index = compiler.add_upvalue(local_index, true)?;
+            return Ok(Some((index, is_const)));
+        } else if let Some((upval_index, is_const)) = resolve_upvalue(parser, enclosing)? {
+            let index = compiler.add_upvalue(upval_index, false)?;
+            return Ok(Some((index, is_const)));
+        }
+    }
+
+    Ok(None)
 }
 
 struct ParseRule(
@@ -1004,6 +1057,6 @@ impl Take<Compiler> {
 
     fn pop_compiler(&mut self) {
         let enclosing = *self.take().unwrap().enclosing.unwrap();
-        let _ = std::mem::replace(self, Take::new(enclosing));
+        let _ = std::mem::replace(self, enclosing);
     }
 }

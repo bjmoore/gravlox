@@ -6,12 +6,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::RuntimeError;
 use crate::obj::{make_obj, Obj};
 use crate::op::*;
-use crate::value::Closure;
 use crate::value::Function;
 use crate::value::Native;
 use crate::value::Value;
 
-const NULL_FRAME_MSG: &'static str = "Current frame should not be None";
+use std::cmp::Ordering;
+
+const NULL_FRAME_MSG: &str = "Current frame should not be None";
 const FRAMES_MAX: usize = 255;
 
 struct Global {
@@ -19,11 +20,50 @@ struct Global {
     value: Value,
 }
 
+struct CallFrame {
+    closure: Obj<Closure>,
+    ip: *const u8,
+    stack_offset: usize,
+}
+
+#[derive(Debug)]
+pub struct Closure {
+    pub func: Obj<Function>,
+    pub upvalues: Vec<Obj<Upvalue>>,
+}
+
+#[derive(Debug)]
+struct Upvalue {
+    location: *mut Value,
+    closed: Value,
+}
+
+impl PartialOrd for Upvalue {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Upvalue {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.location.cmp(&other.location)
+    }
+}
+
+impl PartialEq for Upvalue {
+    fn eq(&self, other: &Self) -> bool {
+        self.location == other.location
+    }
+}
+
+impl Eq for Upvalue {}
+
 pub struct GravloxVM {
     stack: Vec<Value>,
     globals: HashMap<String, Global>,
     // The book uses a fixed-size array of CallFrames, but I'm just going to use a vec for now to keep it simple.
     frames: Vec<CallFrame>,
+    open_upvalues: Vec<Obj<Upvalue>>,
 }
 
 impl GravloxVM {
@@ -32,6 +72,7 @@ impl GravloxVM {
             stack: Vec::new(),
             globals: HashMap::new(),
             frames: Vec::new(),
+            open_upvalues: Vec::new(),
         };
 
         vm.define_native("time", time, 0);
@@ -42,7 +83,10 @@ impl GravloxVM {
 
     pub fn interpret(&mut self, func: Obj<Function>) {
         self.push(Value::FunctionRef(func.clone()));
-        let closure = make_obj(Closure { func });
+        let closure = make_obj(Closure {
+            func,
+            upvalues: Vec::new(),
+        });
         self.pop();
         self.push(Value::ClosureRef(closure.clone()));
         self.call(closure, 0)
@@ -102,6 +146,7 @@ impl GravloxVM {
                     }
 
                     // We saved the stack height before entering this call frame, so reset the stack to that height afterward
+                    self.close_upvalues(exiting_frame.stack_offset);
                     self.stack.truncate(exiting_frame.stack_offset);
                     self.push(result);
                 }
@@ -333,8 +378,41 @@ impl GravloxVM {
                         Value::FunctionRef(f) => f.clone(),
                         _ => unreachable!("OP_CLOSURE on a non-function value"),
                     };
-                    let closure = make_obj(Closure { func });
+                    // Here we need code to parse the upvalues and peel them out of the enclosing frame
+                    let mut upvalues = Vec::new();
+                    for _ in 0..func.borrow().upvalue_count {
+                        let is_local = self.read_byte();
+                        let upval_idx = self.read_byte() as usize;
+                        if is_local == 1 {
+                            let slot = upval_idx + self.current_frame().stack_offset;
+                            upvalues.push(self.capture_upvalue(slot));
+                        } else {
+                            upvalues.push(
+                                self.current_frame().closure.borrow().upvalues[upval_idx].clone(),
+                            );
+                        }
+                    }
+                    let closure = make_obj(Closure { func, upvalues });
                     self.push(Value::ClosureRef(closure));
+                }
+                OP_GET_UPVALUE => {
+                    let upval_idx = self.read_byte() as usize;
+                    let value = self.current_frame().closure.borrow().upvalues[upval_idx]
+                        .borrow()
+                        .location;
+                    unsafe { self.push((*value).clone()) };
+                }
+                OP_SET_UPVALUE => {
+                    let upval_idx = self.read_byte() as usize;
+                    let value = self.pop();
+                    unsafe {
+                        *self.current_frame().closure.borrow().upvalues[upval_idx]
+                            .borrow()
+                            .location = value.clone();
+                    }
+                }
+                OP_CLOSE_UPVALUE => {
+                    self.close_upvalues(self.stack.len() - 1);
                 }
                 _ => unreachable!("Unknown opcode while executing chunk: 0x{:02x}", opcode),
             }
@@ -355,6 +433,16 @@ impl GravloxVM {
             current_frame.ip = current_frame.ip.add(1);
             ret
         }
+    }
+
+    fn read_2byte(&mut self) -> usize {
+        ((self.read_byte() as usize) << 8) + self.read_byte() as usize
+    }
+
+    fn read_3byte(&mut self) -> usize {
+        ((self.read_byte() as usize) << 16)
+            + ((self.read_byte() as usize) << 8)
+            + self.read_byte() as usize
     }
 
     fn read_constant(&self, const_idx: usize) -> Value {
@@ -459,12 +547,34 @@ impl GravloxVM {
         self.pop();
         self.pop();
     }
-}
 
-struct CallFrame {
-    closure: Obj<Closure>,
-    ip: *const u8,
-    stack_offset: usize,
+    fn capture_upvalue(&mut self, slot: usize) -> Obj<Upvalue> {
+        let local: *mut Value = &mut self.stack[slot];
+
+        for other in &self.open_upvalues {
+            if other.borrow().location == local {
+                return other.clone();
+            } else if other.borrow().location > local {
+                break;
+            }
+        }
+
+        let upvalue = make_obj(Upvalue { location: local, closed: Value::Nil });
+
+        self.open_upvalues.push(upvalue.clone());
+        self.open_upvalues.sort();
+
+        upvalue
+    }
+
+    fn close_upvalues(&mut self, last: usize) {
+        let last: *mut Value = &mut self.stack[last];
+        if let Some(upval) = self.open_upvalues.pop_if(|u| u.borrow().location >= last) {
+            let mut upval = upval.borrow_mut();
+            upval.closed = unsafe { (*upval.location).clone() };
+            upval.location = &mut upval.closed;
+        }
+    }
 }
 
 fn time(_args: &[Value]) -> Value {

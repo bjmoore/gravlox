@@ -1,13 +1,13 @@
 use clap::Parser;
 use compiler::compile;
+use std::collections::VecDeque;
 use std::{
     error::Error,
     fs,
     io::{self, Write},
 };
-use vm::GravloxVM;
 use value::Value;
-use std::collections::VecDeque;
+use vm::GravloxVM;
 
 mod chunk;
 mod compiler;
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 run_script(&filename, args.debug)
             }
-        },
+        }
         None => repl(args.debug),
     }?;
 
@@ -97,16 +97,18 @@ fn disassemble(filename: &str) -> Result<(), Box<dyn Error>> {
             for (idx, constant) in chunk.constants.iter().enumerate() {
                 if let Value::FunctionRef(f) = constant {
                     functions.push_back(f.clone());
-                } else {
-                    println!("{idx}: {}", constant);
                 }
+                println!("{idx}: {}", constant);
             }
             println!();
         }
 
+        println!("bytes: {:?}", chunk.code);
+        println!();
+
         println!("code:");
         println!("{}", chunk);
     }
-    
+
     Ok(())
 }

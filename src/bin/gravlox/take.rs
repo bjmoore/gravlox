@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use std::ops::DerefMut;
 
+#[derive(Debug)]
 pub struct Take<T> {
     value: Option<T>,
 }

@@ -1,0 +1,14 @@
+fun factory(x) {
+    fun printme() {
+    	print x;
+    }
+    return printme;
+}
+
+var print_foo = factory("foo");
+var print_bar = factory("bar");
+var print_5 = factory(5);
+
+print_foo();
+print_bar();
+print_5();

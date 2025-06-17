@@ -12,6 +12,8 @@ pub enum CompileError {
     TooManyConstants,
     #[error("Too many local variables in current scope.")]
     TooManyLocals,
+    #[error("Too many captured variables in current scope.")]
+    TooManyUpvalues,
     #[error("Too much code to jump")]
     JumpTooLong,
     #[error("Loop body too long.")]

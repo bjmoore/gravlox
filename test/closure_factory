@@ -1,0 +1,9 @@
+fun factory() {
+    var x = "outside";
+    fun outfun() {
+    	print x;
+    }
+    outfun();
+}
+
+factory();

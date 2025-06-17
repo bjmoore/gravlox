@@ -1,6 +1,6 @@
 use crate::chunk::Chunk;
-use crate::chunk::ChunkPtr;
 use crate::obj::{make_obj, Obj};
+use crate::vm::Closure;
 use std::fmt::Display;
 
 #[derive(Debug, Clone)]
@@ -54,6 +54,7 @@ pub struct Function {
     pub arity: usize,
     pub chunk: Obj<Chunk>,
     pub name: Option<String>,
+    pub upvalue_count: usize,
 }
 
 impl Function {
@@ -62,6 +63,7 @@ impl Function {
             arity: 0,
             chunk: make_obj(Chunk::new()),
             name: name.map(String::from),
+            upvalue_count: 0
         }
     }
 }
@@ -78,10 +80,6 @@ pub struct Native {
     pub func: fn(&[Value]) -> Value,
 }
 
-#[derive(Debug)]
-pub struct Closure {
-    pub func: Obj<Function>,
-}
 
 #[cfg(test)]
 mod tests {
